@@ -1,0 +1,4 @@
+﻿#vs
+/.vs
+/out
+/CMakeSettings.json
