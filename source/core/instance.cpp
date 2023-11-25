@@ -1,10 +1,10 @@
 #include "instance.hpp"
 
 #include <iostream>
+#include <ranges>
 
 namespace vkr
 {
-
 	Instance::Instance(std::span<const char* const> enabledLayers, std::span<const char* const> enabledExtensions)
 		:context{},
 		instance{ getInstance(enabledLayers,enabledExtensions) },
@@ -18,6 +18,45 @@ namespace vkr
 
 	Instance::Instance(const InstanceCreateInfo& createInfo)
 		:Instance{ createInfo.enabledLayers, createInfo.enabledExtensions } {}
+
+	vk::raii::PhysicalDevice Instance::getPhysicalDevice(uint32_t index) const
+	{
+		vk::raii::PhysicalDevices physicalDevices{ instance };
+
+		return physicalDevices[index];
+	}
+
+	vk::raii::PhysicalDevice Instance::getPhysicalDevice(std::function<uint32_t(const vk::PhysicalDeviceProperties&)> score) const
+	{
+		vk::raii::PhysicalDevices physicalDevices{ instance };
+
+		return std::ranges::max(physicalDevices, {},
+			[&score](const vk::raii::PhysicalDevice& physicalDevice)-> uint32_t
+			{
+				return score(physicalDevice.getProperties());
+			});
+	}
+
+	vk::raii::PhysicalDevice Instance::getPhysicalDevice() const
+	{
+		return getPhysicalDevice([](const vk::PhysicalDeviceProperties& properties) -> uint32_t
+			{
+				uint32_t score = 0;
+				switch (properties.deviceType)
+				{
+				case vk::PhysicalDeviceType::eDiscreteGpu:
+					score += 100;
+					break;
+				case vk::PhysicalDeviceType::eIntegratedGpu:
+					score += 50;
+				case vk::PhysicalDeviceType::eCpu:
+					score += 20;
+				default:
+					break;
+				}
+				return score;
+			});
+	}
 
 	vk::raii::Instance Instance::getInstance(
 		std::span<const char* const> enabledLayers, 

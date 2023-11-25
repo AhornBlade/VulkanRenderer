@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <functional>
+
 namespace vkr
 {	
 	struct InstanceCreateInfo
@@ -15,6 +17,15 @@ namespace vkr
 	public:
 		Instance(std::span<const char* const> enabledLayers, std::span<const char* const> enabledExtensions);
 		Instance(const InstanceCreateInfo& createInfo);
+
+		inline operator vk::raii::Instance& () noexcept { return instance; }
+
+		vk::raii::PhysicalDevice getPhysicalDevice(uint32_t index) const;
+
+		vk::raii::PhysicalDevice getPhysicalDevice(
+			std::function<uint32_t(const vk::PhysicalDeviceProperties&)> score) const;
+
+		vk::raii::PhysicalDevice getPhysicalDevice() const;// get best default physical device
 
 	private:
 		vk::raii::Context context;
