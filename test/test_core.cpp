@@ -1,5 +1,6 @@
 #include <core/instance.hpp>
 #include <core/queue.hpp>
+#include <core/device.hpp>
 
 
 int main()
@@ -13,4 +14,8 @@ int main()
 	queueRequirements.push_back({ vk::QueueFlagBits::eTransfer, 2 });
 
 	vkr::QueueFamilyInfos queueFamilyInfos{ physicalDevice, queueRequirements };
+
+	auto device = vkr::createDevice(physicalDevice, queueRequirements);
+
+	vkr::QueueFamilies queueFamilies{ device, queueFamilyInfos };
 }

@@ -78,7 +78,7 @@ namespace vkr
 		for (auto& queueFamilyInfo : *this)
 		{
 			std::ranges::sort(queueFamilyInfo.queuePriorities, std::ranges::greater());
-	}
+		}
 	}
 
 	QueueFamilyInfos::operator std::vector<vk::DeviceQueueCreateInfo>() const
@@ -86,6 +86,23 @@ namespace vkr
 		std::vector<vk::DeviceQueueCreateInfo> createInfos{ size() };
 		std::ranges::copy(*this, createInfos.data());
 		return createInfos;
+	}
+
+	QueueFamily::QueueFamily(const vk::raii::Device& device, const QueueFamilyInfo& queueFamilyInfo)
+		: queueFamilyIndex{ queueFamilyInfo.queueFamilyIndex }
+	{
+		for (uint32_t queueIndex = 0; queueIndex < queueFamilyInfo.queuePriorities.size(); queueIndex++)
+		{
+			push_back(Queue{ device, queueFamilyIndex, queueIndex });
+		}
+	}
+
+	QueueFamilies::QueueFamilies(const vk::raii::Device& device, std::span<const QueueFamilyInfo> queueFamilyInfos)
+	{
+		for (const auto& queueFamilyInfo : queueFamilyInfos)
+		{
+			push_back(QueueFamily{ device, queueFamilyInfo });
+		}
 	}
 
 }; // namespace vkr

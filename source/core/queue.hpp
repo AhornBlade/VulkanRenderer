@@ -34,4 +34,28 @@ namespace vkr
 		operator std::vector<vk::DeviceQueueCreateInfo>() const;
 	};
 
+	class Queue : public vk::raii::Queue
+	{
+	public:
+		using vk::raii::Queue::Queue;
+	};
+
+	class QueueFamily : public std::vector<Queue>
+	{
+	public:
+		QueueFamily(const vk::raii::Device& device, const QueueFamilyInfo& queueFamilyInfo);
+
+		inline uint32_t getQueueFamilyIndex() const noexcept { return queueFamilyIndex; }
+
+	private:
+		uint32_t queueFamilyIndex;
+	};
+
+	class QueueFamilies : public std::vector<QueueFamily>
+	{
+	public:
+		QueueFamilies(const vk::raii::Device& device, std::span<const QueueFamilyInfo> queueFamilyInfos);
+
+	};
+
 }; // namespace vkr
