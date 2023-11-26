@@ -8,7 +8,7 @@ namespace vkr
 	{
 		vk::QueueFlags queueType;
 		uint32_t queueCount = 1;
-		float priority = 1.0f;
+		float priority = 0.5f;
 		bool required = false;
 	};
 
@@ -26,7 +26,8 @@ namespace vkr
 		using std::vector<QueueFamilyInfo>::vector;
 
 		//GPU only mode
-		QueueFamilyInfos(const vk::raii::PhysicalDevice& physicalDevice);
+		explicit QueueFamilyInfos(const vk::raii::PhysicalDevice& physicalDevice);
+
 		QueueFamilyInfos(const vk::raii::PhysicalDevice& physicalDevice,
 			std::span<QueueRequirement> queueRequirements);
 

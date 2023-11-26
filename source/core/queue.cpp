@@ -35,6 +35,24 @@ namespace vkr
 			});
 
 		auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+		auto addQueueFamilyInfo = [&](const QueueRequirement& requirement, uint32_t queueFamilyIndex)
+			{
+				for (auto& dstInfo : *this)
+				{
+					if (queueFamilyIndex == dstInfo.queueFamilyIndex)
+					{
+						dstInfo.queuePriorities.resize(
+							dstInfo.queuePriorities.size() + requirement.queueCount,
+							requirement.priority);
+						return;
+					}
+				}
+
+				QueueFamilyInfo queueFamilyInfo;
+				queueFamilyInfo.queueFamilyIndex = queueFamilyIndex;
+				queueFamilyInfo.queuePriorities.resize(requirement.queueCount, requirement.priority);
+				push_back(queueFamilyInfo);
+			};
 		auto addQueueRequirement = [&](const QueueRequirement& requirement) -> bool
 			{
 				for (uint32_t queueFamilyIndex = 0; queueFamilyIndex < queueFamilyProperties.size(); queueFamilyIndex++)
@@ -44,10 +62,7 @@ namespace vkr
 						&& properties.queueCount >= requirement.queueCount)
 					{
 						properties.queueCount -= requirement.queueCount;
-						QueueFamilyInfo info{};
-						info.queuePriorities.resize(requirement.queueCount, requirement.priority);
-						info.queueFamilyIndex = queueFamilyIndex;
-						push_back(info);
+						addQueueFamilyInfo(requirement, queueFamilyIndex);
 						return true;
 					}
 				}
@@ -59,6 +74,11 @@ namespace vkr
 			if ((!addQueueRequirement(requirement)) && requirement.required)
 				throw std::runtime_error("Failed to find required queues");
 		}
+
+		for (auto& queueFamilyInfo : *this)
+		{
+			std::ranges::sort(queueFamilyInfo.queuePriorities, std::ranges::greater());
+	}
 	}
 
 	QueueFamilyInfos::operator std::vector<vk::DeviceQueueCreateInfo>() const
