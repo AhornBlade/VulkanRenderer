@@ -10,7 +10,10 @@ namespace vkr
 	}
 
 	Device::Device(const vk::raii::PhysicalDevice& physicalDevice, const DeviceCreateInfo& createInfo, const QueueFamilyInfos& queueFamilyInfos)
-		:vk::raii::Device{ getDevice(physicalDevice, createInfo, queueFamilyInfos) }{}
+		:vk::raii::Device{ getDevice(physicalDevice, createInfo, queueFamilyInfos) },
+		queueFamilies{ *this, queueFamilyInfos }
+	{
+	}
 
 	Device::Device(const vk::raii::PhysicalDevice& physicalDevice, const DeviceCreateInfo& createInfo)
 		:Device{ physicalDevice, createInfo, QueueFamilyInfos{physicalDevice} } {}

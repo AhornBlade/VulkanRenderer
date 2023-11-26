@@ -29,6 +29,8 @@ namespace vkr
 			std::span<QueueRequirement> queueRequirements);
 
 	private:
+		QueueFamilies queueFamilies;
+
 		vk::raii::Device getDevice(const vk::raii::PhysicalDevice& physicalDevice,
 			const DeviceCreateInfo& createInfo,
 			const QueueFamilyInfos& queueFamilyInfos) const;

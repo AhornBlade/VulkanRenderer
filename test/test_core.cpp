@@ -17,5 +17,4 @@ int main()
 
 	auto device = vkr::createDevice(physicalDevice, queueRequirements);
 
-	vkr::QueueFamilies queueFamilies{ device, queueFamilyInfos };
 }
