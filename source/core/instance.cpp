@@ -14,6 +14,7 @@ namespace vkr
 		debugMessenger{ nullptr }
 #endif
 	{
+		std::cout << "Success to create instance\n";
 	}
 
 	Instance::Instance(const InstanceCreateInfo& createInfo)

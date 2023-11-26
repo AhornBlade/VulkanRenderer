@@ -1,6 +1,8 @@
 #include "queue.hpp"
 
 #include <ranges>
+#include <iostream>
+#include <format>
 
 namespace vkr
 {
@@ -95,6 +97,9 @@ namespace vkr
 		{
 			push_back(Queue{ device, queueFamilyIndex, queueIndex });
 		}
+
+		std::cout << std::format("Success to create {} queues in {}th queueFamily\n",
+			queueFamilyInfo.queuePriorities.size(), queueFamilyInfo.queueFamilyIndex);
 	}
 
 	QueueFamilies::QueueFamilies(const vk::raii::Device& device, std::span<const QueueFamilyInfo> queueFamilyInfos)

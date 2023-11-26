@@ -1,5 +1,7 @@
 #include "device.hpp"
 
+#include <iostream>
+
 namespace vkr
 {
 	DeviceCreateInfo::DeviceCreateInfo()
@@ -13,6 +15,7 @@ namespace vkr
 		:vk::raii::Device{ getDevice(physicalDevice, createInfo, queueFamilyInfos) },
 		queueFamilies{ *this, queueFamilyInfos }
 	{
+		std::cout << "Success to create device\n";
 	}
 
 	Device::Device(const vk::raii::PhysicalDevice& physicalDevice, const DeviceCreateInfo& createInfo)
