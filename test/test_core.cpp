@@ -1,7 +1,4 @@
-#include <core/instance.hpp>
-#include <core/queue.hpp>
-#include <core/device.hpp>
-
+#include <core/core.hpp>
 
 int main()
 {
