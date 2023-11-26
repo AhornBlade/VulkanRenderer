@@ -8,6 +8,8 @@ namespace vkr
 {	
 	struct InstanceCreateInfo
 	{
+		InstanceCreateInfo();
+
 		std::vector<const char*> enabledLayers;
 		std::vector<const char*> enabledExtensions;
 	};
@@ -36,12 +38,10 @@ namespace vkr
 		vk::DebugUtilsMessengerCreateInfoEXT getDebugUtilsCreateInfo() const;
 	};
 
-	InstanceCreateInfo getDefaultInstanceCreateInfo();
-
 	template<class ... Ts>
 	inline Instance createInstance()
 	{
-		auto createInfo = getDefaultInstanceCreateInfo();
+		InstanceCreateInfo createInfo{};
 
 		(Ts::setInstanceCreateInfo(createInfo), ...);
 

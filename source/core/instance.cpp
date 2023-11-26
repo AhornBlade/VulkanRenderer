@@ -88,15 +88,15 @@ namespace vkr
 			{
 				if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
 				{
-					std::cout << "Info: " << pCallbackData->pMessage << '\n';
+					std::cout << "\033[32m""Info: " << pCallbackData->pMessage << '\n' << "\033[0m";
 				}
 				else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
 				{
-					std::cout << "Warning: " << pCallbackData->pMessage << '\n';
+					std::cout << "\033[33m""Warning: " << pCallbackData->pMessage << '\n' << "\033[0m";
 				}
 				else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 				{
-					std::cout << "Error: " << pCallbackData->pMessage << '\n';
+					std::cout << "\033[31m""Error: " << pCallbackData->pMessage << '\n' << "\033[0m";
 				}
 
 				return VK_FALSE;
@@ -104,14 +104,12 @@ namespace vkr
 		return debugInfo;
 	}
 
-	InstanceCreateInfo getDefaultInstanceCreateInfo()
+	InstanceCreateInfo::InstanceCreateInfo()
 	{
-		InstanceCreateInfo createInfo;
 #ifdef VULKAN_RENDERER_DEBUG
-		createInfo.enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
-		createInfo.enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
+		enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
-		return createInfo;
 	}
 
 }; //namesapce vkr
