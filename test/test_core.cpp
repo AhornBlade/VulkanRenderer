@@ -12,6 +12,14 @@ int main()
 
 	vkr::QueueFamilyInfos queueFamilyInfos{ physicalDevice, queueRequirements };
 
+	std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos = queueFamilyInfos;
+
+	// compile time error
+	//std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos = vkr::QueueFamilyInfos{ physicalDevice, queueRequirements };
+
 	auto device = vkr::createDevice(physicalDevice, queueRequirements);
+	//auto device = vkr::createDevice(physicalDevice);// another way GPU only mode
+	//auto device = vkr::createDevice(physicalDevice, queueFamilyInfos);// another way
+	//auto device = vkr::createDevice(physicalDevice, queueCreateInfos);// another way
 
 }

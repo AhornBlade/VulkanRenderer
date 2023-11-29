@@ -17,7 +17,8 @@ namespace vkr
 		uint32_t queueFamilyIndex;
 		std::vector<float> queuePriorities;
 
-		operator vk::DeviceQueueCreateInfo() const;
+		operator vk::DeviceQueueCreateInfo() const&;
+		operator vk::DeviceQueueCreateInfo() && = delete;
 	};
 
 	class QueueFamilyInfos : public std::vector<QueueFamilyInfo>
@@ -31,7 +32,8 @@ namespace vkr
 		QueueFamilyInfos(const vk::raii::PhysicalDevice& physicalDevice,
 			std::span<QueueRequirement> queueRequirements);
 
-		operator std::vector<vk::DeviceQueueCreateInfo>() const;
+		operator std::vector<vk::DeviceQueueCreateInfo>() const&;
+		operator std::vector<vk::DeviceQueueCreateInfo>() && = delete;
 	};
 
 	class Queue : public vk::raii::Queue
@@ -43,7 +45,7 @@ namespace vkr
 	class QueueFamily : public std::vector<Queue>
 	{
 	public:
-		QueueFamily(const vk::raii::Device& device, const QueueFamilyInfo& queueFamilyInfo);
+		QueueFamily(const vk::raii::Device& device, const vk::DeviceQueueCreateInfo& queueCreateInfo);
 
 		inline uint32_t getQueueFamilyIndex() const noexcept { return queueFamilyIndex; }
 
@@ -54,7 +56,7 @@ namespace vkr
 	class QueueFamilies : public std::vector<QueueFamily>
 	{
 	public:
-		QueueFamilies(const vk::raii::Device& device, std::span<const QueueFamilyInfo> queueFamilyInfos);
+		QueueFamilies(const vk::raii::Device& device, std::span<const vk::DeviceQueueCreateInfo> queueCreateInfos);
 
 	};
 

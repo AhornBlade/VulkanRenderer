@@ -6,7 +6,7 @@
 
 namespace vkr
 {
-	QueueFamilyInfo::operator vk::DeviceQueueCreateInfo() const
+	QueueFamilyInfo::operator vk::DeviceQueueCreateInfo() const&
 	{
 		vk::DeviceQueueCreateInfo createInfo;
 		createInfo.setQueueFamilyIndex(queueFamilyIndex);
@@ -83,31 +83,30 @@ namespace vkr
 		}
 	}
 
-	QueueFamilyInfos::operator std::vector<vk::DeviceQueueCreateInfo>() const
+	QueueFamilyInfos::operator std::vector<vk::DeviceQueueCreateInfo>() const&
 	{
 		std::vector<vk::DeviceQueueCreateInfo> createInfos{ size() };
 		std::ranges::copy(*this, createInfos.data());
 		return createInfos;
 	}
 
-	QueueFamily::QueueFamily(const vk::raii::Device& device, const QueueFamilyInfo& queueFamilyInfo)
-		: queueFamilyIndex{ queueFamilyInfo.queueFamilyIndex }
+	QueueFamilies::QueueFamilies(const vk::raii::Device& device, std::span<const vk::DeviceQueueCreateInfo> queueCreateInfos)
 	{
-		for (uint32_t queueIndex = 0; queueIndex < queueFamilyInfo.queuePriorities.size(); queueIndex++)
+		for (const auto& queueFamilyInfo : queueCreateInfos)
+		{
+			push_back(QueueFamily{ device, queueFamilyInfo });
+		}
+	}
+
+	QueueFamily::QueueFamily(const vk::raii::Device& device, const vk::DeviceQueueCreateInfo& queueCreateInfo)
+	{
+		for (uint32_t queueIndex = 0; queueIndex < queueCreateInfo.queueCount; queueIndex++)
 		{
 			push_back(Queue{ device, queueFamilyIndex, queueIndex });
 		}
 
 		std::cout << std::format("Success to create {} queues in {}th queueFamily\n",
-			queueFamilyInfo.queuePriorities.size(), queueFamilyInfo.queueFamilyIndex);
-	}
-
-	QueueFamilies::QueueFamilies(const vk::raii::Device& device, std::span<const QueueFamilyInfo> queueFamilyInfos)
-	{
-		for (const auto& queueFamilyInfo : queueFamilyInfos)
-		{
-			push_back(QueueFamily{ device, queueFamilyInfo });
-		}
+			queueCreateInfo.queueCount, queueCreateInfo.queueFamilyIndex);
 	}
 
 }; // namespace vkr

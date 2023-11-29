@@ -18,6 +18,14 @@ namespace vkr
 	public:
 		Device(const vk::raii::PhysicalDevice& physicalDevice,
 			const DeviceCreateInfo& createInfo,
+			std::span<const vk::DeviceQueueCreateInfo> queueCreateInfos);
+
+		Device(const vk::raii::PhysicalDevice& physicalDevice,
+			const DeviceCreateInfo& createInfo,
+			const std::vector<vk::DeviceQueueCreateInfo>& queueCreateInfos);
+
+		Device(const vk::raii::PhysicalDevice& physicalDevice,
+			const DeviceCreateInfo& createInfo,
 			const QueueFamilyInfos& queueFamilyInfos);
 
 		//GPU only mode
@@ -33,24 +41,17 @@ namespace vkr
 
 		vk::raii::Device getDevice(const vk::raii::PhysicalDevice& physicalDevice,
 			const DeviceCreateInfo& createInfo,
-			const QueueFamilyInfos& queueFamilyInfos) const;
+			std::span<const vk::DeviceQueueCreateInfo> queueCreateInfos) const;
 	};
 
+	//if sizeof...(args) is 0, it's GPU only mode
 	template<class ... Ts>
-	Device createDevice(const vk::raii::PhysicalDevice& physicalDevice, std::span<QueueRequirement> queueRequirements)
+	Device createDevice(const vk::raii::PhysicalDevice& physicalDevice, auto&& ... args)
+		requires requires{ Device{ physicalDevice, DeviceCreateInfo{}, args... }; }
 	{
 		DeviceCreateInfo createInfo{};
 		(Ts::setDeviceCreateInfo(createInfo), ...);
-		return Device{ physicalDevice, createInfo, queueRequirements };
-	}
-
-	//GPU only mode
-	template<class ... Ts>
-	Device createDevice(const vk::raii::PhysicalDevice& physicalDevice)
-	{
-		DeviceCreateInfo createInfo{};
-		(Ts::setDeviceCreateInfo(createInfo), ...);
-		return Device{ physicalDevice, createInfo };
+		return Device{ physicalDevice, createInfo, args... };
 	}
 
 }// namespace vkr
