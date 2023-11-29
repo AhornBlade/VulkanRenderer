@@ -1,9 +1,22 @@
 #include <core/core.hpp>
 
+#include <ranges>
+
 int main()
 {
 	auto instance = vkr::createInstance();
 	auto physicalDevice = instance.getPhysicalDevice();
+	//auto physicalDevice = instance.getPhysicalDevice(0);//another way
+	//auto physicalDevice = instance.getPhysicalDevice(
+	//	[](const vk::PhysicalDeviceProperties& properties)->uint32_t
+	//	{
+	//		if (std::ranges::includes(properties.deviceName, std::string("NVIDIA")))
+	//			return 100;
+	//		else if (std::ranges::includes(properties.deviceName, std::string("AMD")))
+	//			return 50;
+	//		else
+	//			return 0;
+	//	});// another way
 
 	std::vector<vkr::QueueRequirement> queueRequirements;
 	queueRequirements.push_back({ vk::QueueFlagBits::eGraphics, 5, 1.0f });

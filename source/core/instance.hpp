@@ -27,7 +27,8 @@ namespace vkr
 		vk::raii::PhysicalDevice getPhysicalDevice(
 			std::function<uint32_t(const vk::PhysicalDeviceProperties&)> score) const;
 
-		vk::raii::PhysicalDevice getPhysicalDevice() const;// get best default physical device
+        // get best default physical device
+		vk::raii::PhysicalDevice getPhysicalDevice() const;
 
 	private:
 		vk::raii::Context context;
