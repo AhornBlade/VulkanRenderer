@@ -1,7 +1,5 @@
 #include <core/core.hpp>
 
-#include <ranges>
-
 int main()
 {
 	auto instance = vkr::createInstance();

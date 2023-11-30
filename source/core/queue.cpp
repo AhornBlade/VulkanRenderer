@@ -1,6 +1,5 @@
 #include "queue.hpp"
 
-#include <ranges>
 #include <iostream>
 #include <format>
 
