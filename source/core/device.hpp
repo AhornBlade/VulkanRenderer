@@ -36,6 +36,8 @@ namespace vkr
 			const DeviceCreateInfo& createInfo,
 			std::span<QueueRequirement> queueRequirements);
 
+		inline auto& getQueueFamilies() const { return queueFamilies; }
+
 	private:
 		QueueFamilies queueFamilies;
 
