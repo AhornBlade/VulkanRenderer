@@ -12,7 +12,7 @@ namespace vkr::exec
 		{
 			using Tag = set_done_t;
 
-			template<class R> requires nothrow_tag_invocable<Tag, R>
+			template<typename R> requires nothrow_tag_invocable<Tag, R>
 			auto operator()(R&& r) const noexcept -> tag_invoke_result_t<Tag, R>
 			{
 				return tag_invoke(Tag{}, static_cast<R&&>(r));
@@ -29,7 +29,7 @@ namespace vkr::exec
 		{
 			using Tag = set_error_t;
 
-			template<class R, class E> requires nothrow_tag_invocable<Tag, R, E>
+			template<typename R, typename E> requires nothrow_tag_invocable<Tag, R, E>
 			auto operator()(R&& r, E&& e) const noexcept -> tag_invoke_result_t<Tag, R, E>
 			{
 				return tag_invoke(Tag{}, static_cast<R&&>(r), static_cast<E&&>(e));
@@ -46,7 +46,7 @@ namespace vkr::exec
 		{
 			using Tag = set_value_t;
 
-			template<class R, class ... Args> requires tag_invocable<Tag, R, Args...>
+			template<typename R, typename ... Args> requires tag_invocable<Tag, R, Args...>
 			auto operator()(R&& r, Args&& ... args) const
 				noexcept(nothrow_tag_invocable<Tag, R, Args...>)
 				-> tag_invoke_result_t<Tag, R, Args...>
@@ -59,17 +59,16 @@ namespace vkr::exec
 	using set_value_t = _set_value::set_value_t;
 	inline constexpr set_value_t set_value{};
 
-	template<class T, class E = std::exception_ptr>
+	template<typename T, typename E = std::exception_ptr>
 	concept receiver = 
 		std::move_constructible<std::remove_cvref_t<T>>&&
-		std::constructible_from<std::remove_cvref_t<T>, T>&&
 		requires(std::remove_cvref_t<T> && t, E && e)
 	{
 		{set_done(std::move(t))} noexcept;
 		{set_error(std::move(t), (E&&)e)} noexcept;
 	};
 
-	template<class T, class ... An>
+	template<typename T, typename ... An>
 	concept receiver_of = receiver<T> &&
 		requires(std::remove_cvref_t<T> && t, An&& ... an)
 	{
