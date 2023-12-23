@@ -4,6 +4,7 @@
 #include <exec/type_list.hpp>
 
 #include <iostream>
+#include <ranges>
 
 struct test_receiver
 {
@@ -60,8 +61,23 @@ int main()
 
 	vkr::exec::sender auto just_s = vkr::exec::just(1, 3, 5);
 	vkr::exec::sender_traits<decltype(just_s)> s_traits;
-	
-	auto op = vkr::exec::connect(just_s, r);
 
-	vkr::exec::start(op);
+	auto op1 = vkr::exec::connect(just_s, r);
+
+	vkr::exec::start(op1);
+
+	auto add = [](auto ... args) {return (args + ...); };
+
+	vkr::exec::sender auto then_s = vkr::exec::then(just_s, add);
+
+	auto op2 = vkr::exec::connect(then_s, r);
+	vkr::exec::start(op2);
+
+	// std::cout << vkr::exec::_then::sender_to_function<decltype(std::move(just_s)), decltype(std::move(add))> << '\n';
+
+	auto op3 = vkr::exec::just(2, 4, 6) 
+		| vkr::exec::then([](auto ... args) {return (args + ...); })
+		| vkr::exec::connect(r);
+
+	vkr::exec::start(op3);
 }
