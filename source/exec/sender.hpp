@@ -49,7 +49,7 @@ namespace vkr::exec
 				noexcept(nothrow_tag_invocable<Tag, S, R>)
 				-> tag_invoke_result_t<Tag, S, R>
 			{
-				return tag_invoke(Tag{}, static_cast<S&&>(s), static_cast<R&&>(r));
+				return tag_invoke(Tag{}, std::forward<S>(s), std::forward<R>(r));
 			}
 		};
 	}// namespace _connect
@@ -69,7 +69,7 @@ namespace vkr::exec
 				noexcept(nothrow_tag_invocable<Tag, O>)
 				->tag_invoke_result_t<Tag, O>
 			{
-				return tag_invoke(Tag{}, static_cast<O&&>(o));
+				return tag_invoke(Tag{}, std::forward<O>(o));
 			}
 		};
 	}//namespace _start
@@ -106,12 +106,12 @@ namespace vkr::exec
 					{
 						std::apply([&s](Ts& ... values)
 							{
-								set_value(static_cast<Reveiver&&>(s.r_), values...);
+								set_value(std::move(s.r_), values...);
 							}, s.values_);
 					}
 					catch (...)
 					{
-						set_error(static_cast<Reveiver&&>(s.r_), std::current_exception());
+						set_error(std::move(s.r_), std::current_exception());
 					}
 				}
 			};
@@ -135,5 +135,10 @@ namespace vkr::exec
 			std::tuple{ std::forward<Ts>(args)... });
 	}
 
+	namespace _then
+	{
+
+
+	}// namespace _then
 
 }// namespace vkr::exec

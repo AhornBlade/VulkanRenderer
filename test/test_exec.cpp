@@ -47,9 +47,9 @@ using List = typename vkr::exec::type_list<TypeList1, TypeList2, TypeList3>;
 int main()
 {
 	vkr::exec::receiver auto r = test_receiver{};
-	vkr::exec::set_value(static_cast<test_receiver&&>(r), 2387, ' ', "value");
-	vkr::exec::set_error(static_cast<test_receiver&&>(r), false);
-	vkr::exec::set_done(static_cast<test_receiver&&>(r));
+	vkr::exec::set_value(std::move(r), 2387, ' ', "value");
+	vkr::exec::set_error(std::move(r), false);
+	vkr::exec::set_done(std::move(r));
 
 	std::cout << vkr::exec::type_among<int, int, double, char> << '\n';
 	std::cout << vkr::exec::type_among<int, float, double, char> << '\n';

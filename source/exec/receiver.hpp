@@ -15,7 +15,7 @@ namespace vkr::exec
 			template<typename R> requires nothrow_tag_invocable<Tag, R>
 			auto operator()(R&& r) const noexcept -> tag_invoke_result_t<Tag, R>
 			{
-				return tag_invoke(Tag{}, static_cast<R&&>(r));
+				return tag_invoke(Tag{}, std::forward<R>(r));
 			}
 		};
 	}//namespace _set_done
@@ -32,7 +32,7 @@ namespace vkr::exec
 			template<typename R, typename E> requires nothrow_tag_invocable<Tag, R, E>
 			auto operator()(R&& r, E&& e) const noexcept -> tag_invoke_result_t<Tag, R, E>
 			{
-				return tag_invoke(Tag{}, static_cast<R&&>(r), static_cast<E&&>(e));
+				return tag_invoke(Tag{}, std::forward<R>(r), std::forward<E>(e));
 			}
 		};
 	}// namespace _set_error
@@ -51,7 +51,7 @@ namespace vkr::exec
 				noexcept(nothrow_tag_invocable<Tag, R, Args...>)
 				-> tag_invoke_result_t<Tag, R, Args...>
 			{
-				return tag_invoke(Tag{}, static_cast<R&&>(r), static_cast<Args>(args)...);
+				return tag_invoke(Tag{}, std::forward<R>(r), std::forward<Args>(args)...);
 			}
 		};
 	}// namespace _set_value
@@ -65,14 +65,14 @@ namespace vkr::exec
 		requires(std::remove_cvref_t<T> && t, E && e)
 	{
 		{set_done(std::move(t))} noexcept;
-		{set_error(std::move(t), (E&&)e)} noexcept;
+		{set_error(std::move(t), std::forward<E>(e))} noexcept;
 	};
 
 	template<typename T, typename ... An>
 	concept receiver_of = receiver<T> &&
 		requires(std::remove_cvref_t<T> && t, An&& ... an)
 	{
-		set_value(std::move(t), static_cast<An&&>(an)...);
+		set_value(std::move(t), std::forward<An>(an)...);
 	};
 
 }// namespace vkr::exec

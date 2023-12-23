@@ -11,10 +11,10 @@ namespace vkr::exec
 		{
 			template<class Tag, class ... Args>
 			constexpr auto operator()(Tag tag, Args&& ... args) const
-				noexcept(noexcept(tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...)))
-				-> decltype(tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...))
+				noexcept(noexcept(tag_invoke(std::move(tag), std::forward<Args>(args)...)))
+				-> decltype(tag_invoke(std::move(tag), std::forward<Args>(args)...))
 			{
-				return tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...);
+				return tag_invoke(std::move(tag), std::forward<Args>(args)...);
 			}
 		};
 	}
