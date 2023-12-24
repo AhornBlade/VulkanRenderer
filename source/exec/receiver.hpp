@@ -64,15 +64,15 @@ namespace vkr::exec
 		std::move_constructible<std::remove_cvref_t<T>>&&
 		requires(std::remove_cvref_t<T> && t, E && e)
 	{
-		{set_done(std::move(t))} noexcept;
-		{set_error(std::move(t), std::forward<E>(e))} noexcept;
+		{set_done(std::forward<T>(t))} noexcept;
+		{set_error(std::forward<T>(t), std::forward<E>(e))} noexcept;
 	};
 
 	template<typename T, typename ... An>
 	concept receiver_of = receiver<T> &&
 		requires(std::remove_cvref_t<T> && t, An&& ... an)
 	{
-		set_value(std::move(t), std::forward<An>(an)...);
+		set_value(std::forward<T>(t), std::forward<An>(an)...);
 	};
 
 }// namespace vkr::exec

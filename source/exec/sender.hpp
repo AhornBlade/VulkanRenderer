@@ -40,10 +40,10 @@ namespace vkr::exec
 			using Tag = connect_t;
 
 			template<typename S, receiver R>
-				requires tag_invocable<Tag, S, R>
+				// requires tag_invocable<Tag, S, R>
 			auto operator()(S&& s, R&& r) const
-				noexcept(nothrow_tag_invocable<Tag, S, R>)
-				-> tag_invoke_result_t<Tag, S, R>
+				// noexcept(nothrow_tag_invocable<Tag, S, R>)
+				// -> tag_invoke_result_t<Tag, S, R>
 			{
 				return tag_invoke(Tag{}, std::forward<S>(s), std::forward<R>(r));
 			}
@@ -60,7 +60,7 @@ namespace vkr::exec
 	concept sender_to = sender<S> && receiver<R> &&
 		requires(std::remove_cvref_t<S> && s, std::remove_cvref_t<R> && r)
 	{
-		connect(std::move(s), std::move(r));
+		connect(std::forward<S>(s), std::forward<R>(r));
 	};
 
 	namespace _connect
@@ -73,8 +73,7 @@ namespace vkr::exec
 			template<sender_to<R> S, typename Self>
 				requires std::same_as<std::remove_cvref_t<Self>, connect_closure_t>
 			friend auto operator|(S&& s, Self&& r) 
-				noexcept(nothrow_tag_invocable<connect_t, S, R>)
-				-> tag_invoke_result_t<connect_t, S, R>
+				noexcept(noexcept(connect(std::forward<S>(s), std::forward<Self>(r).r_)))
 			{
 				return connect(std::forward<S>(s), std::forward<Self>(r).r_);
 			}
@@ -105,7 +104,7 @@ namespace vkr::exec
 				return tag_invoke(Tag{}, std::forward<O>(o));
 			}
 
-			auto operator()() const noexcept -> start_closure_t;
+			inline auto operator()() const noexcept -> start_closure_t;
 		};
 	}//namespace _start
 
@@ -116,14 +115,19 @@ namespace vkr::exec
 	{
 		struct start_closure_t
 		{
-			template<typename O, typename Self>
+			template<typename O, typename Self> requires
+				std::same_as<std::remove_cvref_t<Self>, start_closure_t>
 			friend auto operator|(O&& o, Self&& self)
-				noexcept(nothrow_tag_invocable<start_t, O>)
-				-> tag_invoke_result_t<start_t, O>
+				noexcept(noexcept(start(std::forward<O>(o))))
 			{
 				return start(std::forward<O>(o));
 			}
 		};
+
+		inline auto start_t::operator()() const noexcept -> start_closure_t
+		{
+			return start_closure_t{};
+		}
 
 	}// namespace _start
 
@@ -150,18 +154,20 @@ namespace vkr::exec
 				[[no_unique_address]] Tuple values_;
 				[[no_unique_address]] Reveiver r_;
 
-				friend void tag_invoke(start_t, operation& s) noexcept
+				template<typename Self>requires
+					std::same_as<std::remove_cvref_t<Self>, operation>
+				friend void tag_invoke(start_t, Self&& s) noexcept
 				{
 					try
 					{
-						std::apply([&s](Ts& ... values)
+						std::apply([&s]<typename ... Args>(Args&& ... values)
 							{
-								set_value(std::move(s.r_), values...);
-							}, s.values_);
+								set_value(std::forward<Self>(s).r_, std::forward<Args>(values)...);
+							}, std::forward<Self>(s).values_);
 					}
 					catch (...)
 					{
-						set_error(std::move(s.r_), std::current_exception());
+						set_error(std::forward<Self>(s).r_, std::current_exception());
 					}
 				}
 			};
@@ -200,52 +206,61 @@ namespace vkr::exec
 			using Receiver = R;
 			using Function = F;
 
-			template<typename ... Ts> requires is_receiver_of_result<Receiver, Function, Ts...> &&
+			template<typename Self, typename ... Ts> requires 
+				is_receiver_of_result<Receiver, Function, Ts...> &&
+				std::same_as<std::remove_cvref_t<Self>, then_reveiver> &&
 				std::is_nothrow_invocable_v<F, Ts...>
-			friend auto tag_invoke(set_value_t, then_reveiver&& r, Ts&& ... args) noexcept
+			friend auto tag_invoke(set_value_t, Self&& r, Ts&& ... args) noexcept
 			{
 				if constexpr (std::is_void_v<std::invoke_result_t<Function, Ts...>>)
 				{
-					std::invoke(std::move(r.f_), std::forward<Ts>(args)...);
-					set_value(std::move(r.out_r_));
+					std::invoke(std::forward<Self>(r).f_, std::forward<Ts>(args)...);
+					set_value(std::forward<Self>(r).out_r_);
 				}
 				else
 				{
-					set_value(std::move(r.out_r_), std::invoke(std::move(r.f_), std::forward<Ts>(args)...));
+					set_value(std::forward<Self>(r).out_r_, 
+						std::invoke(std::forward<Self>(r).f_, std::forward<Ts>(args)...));
 				}
 			}
 
-			template<typename ... Ts> requires is_receiver_of_result<Receiver, Function, Ts...> &&
+			template<typename Self, typename ... Ts> requires 
+				is_receiver_of_result<Receiver, Function, Ts...> &&
+				std::same_as<std::remove_cvref_t<Self>, then_reveiver> &&
 				(!std::is_nothrow_invocable_v<Function, Ts...>)
-			friend auto tag_invoke(set_value_t, then_reveiver&& r, Ts&& ... args) noexcept
+			friend auto tag_invoke(set_value_t, Self&& r, Ts&& ... args) noexcept
 			{
 				try
 				{
 					if constexpr (std::is_void_v<std::invoke_result_t<Function, Ts...>>)
 					{
-						std::invoke(std::move(r.f_), std::forward<Ts>(args)...);
-						set_value(std::move(r.out_r_));
+						std::invoke(std::forward<Self>(r).f_, std::forward<Ts>(args)...);
+						set_value(std::forward<Self>(r).out_r_);
 					}
 					else
 					{
-						set_value(std::move(r.out_r_), std::invoke(std::move(r.f_), std::forward<Ts>(args)...));
+						set_value(std::forward<Self>(r).out_r_, 
+							std::invoke(std::forward<Self>(r).f_, std::forward<Ts>(args)...));
 					}
 				}
 				catch (...)
 				{
-					set_error(std::move(r.out_r_), std::current_exception());
+					set_error(std::forward<Self>(r).out_r_, std::current_exception());
 				}
 			}
 
-			template<typename E> 
-			friend auto tag_invoke(set_error_t, then_reveiver&& r, E&& e) noexcept
+			template<typename Self, typename E> requires
+				std::same_as<std::remove_cvref_t<Self>, then_reveiver>
+			friend auto tag_invoke(set_error_t, Self&& r, E&& e) noexcept
 			{
-				set_error(std::move(r.out_r_), std::forward<E>(e));
+				set_error(std::forward<Self>(r).out_r_, std::forward<E>(e));
 			}
 
-			friend auto tag_invoke(set_done_t, then_reveiver&& r) noexcept
+			template<typename Self> requires
+				std::same_as<std::remove_cvref_t<Self>, then_reveiver>
+			friend auto tag_invoke(set_done_t, Self&& r) noexcept
 			{
-				set_done(std::move(r.out_r_));
+				set_done(std::forward<Self>(r).out_r_);
 			}
 
 			[[no_unique_address]] Receiver out_r_;
@@ -300,7 +315,7 @@ namespace vkr::exec
 			static constexpr bool sends_done = sender_traits<S>::sends_done;
 
 			template<typename R>
-			using receiver_t = then_reveiver<R, Function>;
+			using receiver_t = then_reveiver<std::remove_cvref_t<R>, std::remove_cvref_t<Function>>;
 
 			template<typename Self, receiver R> requires
 				std::same_as<std::remove_cvref_t<Self>, then_sender> &&
@@ -358,11 +373,9 @@ namespace vkr::exec
 			F f_;
 
 			template<sender_to_function<F> S, typename Self>requires 
-				std::is_move_constructible_v<std::remove_cvref_t<F>> &&
 				std::same_as<std::remove_cvref_t<Self>, then_closure_t>
 			friend auto operator|(S&& s, Self&& self)
-				noexcept(nothrow_tag_invocable<then_t, S, F>)
-				// -> tag_invoke_result_t<then_t, S, F>
+				noexcept(noexcept(then(std::forward<S>(s), std::forward<Self>(self).f_)))
 			{
 				return then(std::forward<S>(s), std::forward<Self>(self).f_);
 			}

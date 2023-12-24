@@ -8,19 +8,25 @@
 
 struct test_receiver
 {
-	friend void tag_invoke(vkr::exec::set_value_t, test_receiver&&, auto&& ... args)
+	template<typename R> requires 
+		std::same_as<std::remove_cvref_t<R>, test_receiver>
+	friend void tag_invoke(vkr::exec::set_value_t, R&&, auto&& ... args)
 	{
 		std::cout << "test_receiver set_value" << '\n';
 		(std::cout << ... << args) << '\n';
 	}
 
-	friend void tag_invoke(vkr::exec::set_error_t, test_receiver&&, auto&& e) noexcept
+	template<typename R> requires 
+		std::same_as<std::remove_cvref_t<R>, test_receiver>
+	friend void tag_invoke(vkr::exec::set_error_t, R&&, auto&& e) noexcept
 	{
 		std::cout << "test_receiver set_error" << '\n';
 		std::cout << e << '\n';
 	}
 
-	friend void tag_invoke(vkr::exec::set_error_t, test_receiver&&, std::exception_ptr e) noexcept
+	template<typename R> requires 
+		std::same_as<std::remove_cvref_t<R>, test_receiver>
+	friend void tag_invoke(vkr::exec::set_error_t, R&&, std::exception_ptr e) noexcept
 	{
 		std::cout << "test_receiver set_error" << '\n';
 		if (e)
@@ -29,7 +35,9 @@ struct test_receiver
 		}
 	}
 
-	friend void tag_invoke(vkr::exec::set_done_t, test_receiver&&) noexcept
+	template<typename R> requires 
+		std::same_as<std::remove_cvref_t<R>, test_receiver>
+	friend void tag_invoke(vkr::exec::set_done_t, R&&) noexcept
 	{
 		std::cout << "test_reveiver set_done" << '\n';
 	}
@@ -48,9 +56,9 @@ using List = typename vkr::exec::type_list<TypeList1, TypeList2, TypeList3>;
 int main()
 {
 	vkr::exec::receiver auto r = test_receiver{};
-	vkr::exec::set_value(std::move(r), 2387, ' ', "value");
-	vkr::exec::set_error(std::move(r), false);
-	vkr::exec::set_done(std::move(r));
+	vkr::exec::set_value(r, 2387, ' ', "value");
+	vkr::exec::set_error(r, false);
+	vkr::exec::set_done(r);
 
 	std::cout << vkr::exec::type_among<int, int, double, char> << '\n';
 	std::cout << vkr::exec::type_among<int, float, double, char> << '\n';
@@ -73,11 +81,15 @@ int main()
 	auto op2 = vkr::exec::connect(then_s, r);
 	vkr::exec::start(op2);
 
-	// std::cout << vkr::exec::_then::sender_to_function<decltype(std::move(just_s)), decltype(std::move(add))> << '\n';
-
 	auto op3 = vkr::exec::just(2, 4, 6) 
 		| vkr::exec::then([](auto ... args) {return (args + ...); })
 		| vkr::exec::connect(r);
 
 	vkr::exec::start(op3);
+
+	vkr::exec::just(3, 5, 7) 
+	| vkr::exec::then([](auto ... args) {return (args + ...); })
+	| vkr::exec::connect(r)
+	| vkr::exec::start();
+
 }
