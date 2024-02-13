@@ -1,5 +1,4 @@
 #include <exec/execution.hpp>
-#include <exec/type_list.hpp>
 
 #include <iostream>
 
@@ -28,4 +27,8 @@ int main()
     std::cout << vkr::type_count_v<vkr::type_list<int, bool, char>> << '\n';
     std::cout << vkr::type_count_v<F1> << '\n';
     std::cout << vkr::type_count_v<F2> << '\n';
+
+    vkr::exec::sender auto just_sender = vkr::exec::just(1, 0.5f, '0');
+    vkr::exec::sender auto just_error_sender = vkr::exec::just_error(std::runtime_error("test error"));
+    vkr::exec::sender auto just_stopped_sender = vkr::exec::just_stopped();
 }

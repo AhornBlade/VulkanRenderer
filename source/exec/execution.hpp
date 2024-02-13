@@ -441,4 +441,112 @@ namespace vkr::exec
     inline constexpr bool sends_stopped = !std::is_same_v<
         gather_signatures<set_stopped_t, S, E, type_list, type_list>, type_list<>>;
 
+    namespace sender_connect
+    {
+        struct connect_t
+        {
+            using Tag = connect_t;
+
+            template<sender S, receiver R>
+                requires tag_invocable<Tag, S, R>
+            constexpr auto operator()(S&& s, R&& r) const
+                noexcept(nothrow_tag_invocable<Tag, S, R>)
+                -> tag_invoke_result_t<Tag, S, R>
+            {
+                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<R>(r));
+            }
+        };
+    }// namespace sender_connect
+
+    using sender_connect::connect_t;
+    inline constexpr connect_t connect{};
+
+    template<sender S, receiver R>
+        requires std::invocable<connect_t, S, R>
+    using connect_result_t = std::invoke_result_t<connect_t, S, R>;
+
+    namespace sender_factories
+    {
+        template<typename Tag, typename ... Ts>
+        struct just_sender
+        {
+            struct is_sender {};
+
+            using completion_signatures = exec::completion_signatures<Tag(Ts...)>;
+
+            template<typename R>
+            struct operation
+            {
+                std::tuple<Ts...> values_;
+                R r_;
+
+                friend void tag_invoke(start_t, operation& op) noexcept
+                {
+                    std::apply([&](Ts& ... args){
+                        Tag{}(std::move(op.r_), std::move(args...));
+                    }, op.values_);
+                }
+            };
+
+            template<typename Self, typename R>
+                requires std::same_as<std::decay_t<Self>, just_sender> &&
+                    std::constructible_from<operation<std::decay_t<R>>, Self, R>
+            friend auto tag_invoke(connect_t, Self&& self, R&& r)
+                noexcept(std::is_nothrow_constructible_v<operation<std::decay_t<R>>, Self, R>)
+                -> operation<std::decay_t<R>>
+            {
+                return operation<std::decay_t<R>>{std::forward<Self>(self), std::forward<R>(r)};
+            }
+
+            std::tuple<Ts...> values_;
+        };
+
+        struct just_t
+        {
+            using Tag = set_value_t;
+
+            template<typename ... Ts>
+                requires std::constructible_from<just_sender<Tag, Ts...>, std::tuple<Ts...>>
+            constexpr auto operator()(Ts&& ... args) const
+                noexcept(std::is_nothrow_constructible_v<just_sender<Tag, Ts...>, std::tuple<Ts...>>)
+                -> just_sender<Tag, Ts...>
+            {
+                return just_sender<Tag, Ts...>{std::tuple{std::forward<Ts>(args)...}};
+            }
+        };
+
+        struct just_error_t
+        {
+            using Tag = set_error_t;
+
+            template<typename E>
+                requires std::constructible_from<just_sender<Tag, E>, std::tuple<E>>
+            constexpr auto operator()(E&& error) const
+                noexcept(std::is_nothrow_constructible_v<just_sender<Tag, E>, std::tuple<E>>)
+                -> just_sender<Tag, E>
+            {
+                return just_sender<Tag, E>{std::tuple{std::forward<E>(error)}};
+            }
+        };
+
+        struct just_stopped_t
+        {
+            using Tag = set_stopped_t;
+
+            constexpr auto operator()() const noexcept
+                -> just_sender<Tag>
+            {
+                return just_sender<Tag>{};
+            }
+        };
+
+    }// namespace sender_factories
+
+    using sender_factories::just_t;
+    using sender_factories::just_error_t;
+    using sender_factories::just_stopped_t;
+    inline constexpr just_t just{};
+    inline constexpr just_error_t just_error{};
+    inline constexpr just_stopped_t just_stopped{};
+
 }// namespace vkr::exec
