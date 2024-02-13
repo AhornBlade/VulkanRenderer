@@ -54,6 +54,8 @@ namespace vkr
             {
                 return tag_invoke(Tag{}, std::as_const(r));
             }
+            
+            constexpr auto operator()() const noexcept;
         };
 
         struct get_stop_token_t : public forwarding_query_t
@@ -73,6 +75,8 @@ namespace vkr
             {
                 return never_stop_token{};
             }
+            
+            constexpr auto operator()() const noexcept;
         };
     }//namespace queries
 
@@ -144,6 +148,8 @@ namespace vkr::exec
             {
                 return tag_invoke(Tag{}, std::as_const(r));
             }
+
+            constexpr auto operator()() const noexcept;
         };
 
         struct get_delegatee_scheduler_t : public forwarding_query_t
@@ -157,6 +163,8 @@ namespace vkr::exec
             {
                 return tag_invoke(Tag{}, std::as_const(r));
             }
+            
+            constexpr auto operator()() const noexcept;
         };
 
         struct get_forward_progress_guarantee_t
@@ -465,6 +473,8 @@ namespace vkr::exec
         requires std::invocable<connect_t, S, R>
     using connect_result_t = std::invoke_result_t<connect_t, S, R>;
 
+    // struct transfer_t;
+
     namespace sender_factories
     {
         template<typename Tag, typename ... Ts>
@@ -506,12 +516,12 @@ namespace vkr::exec
             using Tag = set_value_t;
 
             template<typename ... Ts>
-                requires std::constructible_from<just_sender<Tag, Ts...>, std::tuple<Ts...>>
+                requires std::constructible_from<std::tuple<std::remove_cvref_t<Ts>...>, Ts...>
             constexpr auto operator()(Ts&& ... args) const
-                noexcept(std::is_nothrow_constructible_v<just_sender<Tag, Ts...>, std::tuple<Ts...>>)
-                -> just_sender<Tag, Ts...>
+                noexcept(std::is_nothrow_constructible_v<std::tuple<std::remove_cvref_t<Ts>...>, Ts...>)
+                -> just_sender<Tag, std::remove_cvref_t<Ts>...>
             {
-                return just_sender<Tag, Ts...>{std::tuple{std::forward<Ts>(args)...}};
+                return just_sender<Tag, std::remove_cvref_t<Ts>...>{{std::forward<Ts>(args)...}};
             }
         };
 
@@ -520,12 +530,12 @@ namespace vkr::exec
             using Tag = set_error_t;
 
             template<typename E>
-                requires std::constructible_from<just_sender<Tag, E>, std::tuple<E>>
+                requires std::constructible_from<std::tuple<std::remove_cvref_t<E>>, E>
             constexpr auto operator()(E&& error) const
-                noexcept(std::is_nothrow_constructible_v<just_sender<Tag, E>, std::tuple<E>>)
-                -> just_sender<Tag, E>
+                noexcept(std::is_nothrow_constructible_v<std::tuple<std::remove_cvref_t<E>>, E>)
+                -> just_sender<Tag, std::remove_cvref_t<E>>
             {
-                return just_sender<Tag, E>{std::tuple{std::forward<E>(error)}};
+                return just_sender<Tag, std::remove_cvref_t<E>>{{std::forward<E>(error)}};
             }
         };
 
@@ -540,13 +550,146 @@ namespace vkr::exec
             }
         };
 
+        struct schedule_t
+        {
+            using Tag = schedule_t;
+
+            template<typename Sch>
+                requires tag_invocable<Tag, Sch> &&
+                    sender<tag_invoke_result_t<Tag, Sch>>
+            constexpr auto operator()(Sch&& sch) const
+                noexcept(nothrow_tag_invocable<Tag, Sch>)
+                -> tag_invoke_result_t<Tag, Sch>
+            {
+                return tag_invoke(Tag{}, std::forward<Sch>(sch));
+            }
+        };
+
+        struct transfer_just_t
+        {
+            using Tag = transfer_just_t;
+
+            template<typename Sch, typename ... Ts>
+                requires tag_invocable<Tag, Sch, Ts...>
+            constexpr auto operator()(Sch&& sch, Ts&& ... args) const
+                noexcept(nothrow_tag_invocable<Tag, Sch, Ts...>)
+                -> tag_invoke_result_t<Tag, Sch, Ts...>
+            {
+                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<Ts>(args)...);
+            }
+
+            // template<typename Sch, typename ... Ts>
+            //     requires (!tag_invocable<Tag, Sch, Ts...>) && 
+            //     tag_invocable<transfer_t, just_sender<set_value_t, std::remove_cvref_t<Ts>...>, Sch>
+            // constexpr auto operator()(Sch&& sch, Ts&& ... args) const;
+        };
+
+        template<typename Tag>
+        struct read_sender
+        {
+            struct is_sender {};
+
+            template<typename R>
+            struct operation
+            {
+                R r_;
+
+                friend auto tag_invoke(start_t, operation& op)
+                {
+                    try 
+                    {
+                        set_value(op.r_, Tag{}(get_env(op.r_)));
+                    } catch (...) {
+                        set_error(op.r_, std::current_exception());
+                    }
+                }
+            };
+
+            template<receiver R>
+                requires std::constructible_from<operation<std::decay_t<R>>, R>
+            friend auto tag_invoke(connect_t, read_sender, R&& r)
+                noexcept(std::is_nothrow_constructible_v<operation<std::decay_t<R>>, R>)
+                ->operation<std::decay_t<R>>
+            {
+                return operation<std::decay_t<R>>{std::forward<R>(r)};
+            }
+
+            template<typename Env>
+                requires std::invocable<Tag, Env> && (!std::is_nothrow_invocable_v<Tag, Env>)
+            friend auto tag_invoke(get_completion_signatures_t, read_sender, Env)
+                ->completion_signatures<set_value_t(std::invoke_result_t<Tag, Env>), 
+                    set_error_t(std::exception_ptr)> { return {};}
+
+            template<typename Env>
+                requires std::is_nothrow_invocable_v<Tag, Env>
+            friend auto tag_invoke(get_completion_signatures_t, read_sender, Env)
+                ->completion_signatures<set_value_t(std::invoke_result_t<Tag, Env>)>{ return {}; }
+        };
+
+        struct read_t
+        {
+            template<typename Tag>
+            constexpr read_sender<Tag> operator()(Tag) const noexcept
+            {
+                return read_sender<Tag>{};
+            }
+        };
+
     }// namespace sender_factories
 
     using sender_factories::just_t;
     using sender_factories::just_error_t;
     using sender_factories::just_stopped_t;
+    using sender_factories::schedule_t;
+    using sender_factories::transfer_just_t;
+    using sender_factories::read_t;
     inline constexpr just_t just{};
     inline constexpr just_error_t just_error{};
     inline constexpr just_stopped_t just_stopped{};
+    inline constexpr schedule_t schedule{};
+    inline constexpr transfer_just_t transfer_just{};
+    inline constexpr read_t read{};
+
+    template<typename S>
+    concept scheduler = queryable<S> &&
+        requires(S&& s)
+        {
+            { schedule(std::forward<S>(s)) } -> sender;
+            { get_completion_scheduler<set_value_t>(get_env(schedule(std::forward<S>(s)))) } 
+                -> std::same_as<std::remove_cvref_t<S>>;
+        } &&
+        std::equality_comparable<std::remove_cvref_t<S>> &&
+        std::copy_constructible<std::remove_cvref_t<S>>;
+
+    template<scheduler Sch>
+    using schedule_result_t = std::invoke_result_t<schedule_t, Sch>;
+
+    namespace queries
+    {
+        constexpr auto get_scheduler_t::operator()() const noexcept
+        {
+            return read(get_scheduler_t{});
+        }
+
+        constexpr auto get_delegatee_scheduler_t::operator()() const noexcept
+        {
+            return read(get_delegatee_scheduler_t{});
+        }
+    }// namespace queries
+
 
 }// namespace vkr::exec
+
+namespace vkr::queries
+{
+    constexpr auto get_allocator_t::operator()() const noexcept
+    {
+        return exec::read(get_allocator_t{});
+    }
+
+    constexpr auto get_stop_token_t::operator()() const noexcept
+    {
+        return exec::read(get_stop_token_t{});
+    }
+
+}// namespace vkr::queries
