@@ -18,6 +18,28 @@ using Sender_Sig = vkr::type_list<
 
 using Sig1 = vkr::exec::gather_signatures_impl<vkr::exec::set_value_t, Sender_Sig, std::tuple, std::variant>;
 
+class TestReceiver
+{
+public:
+    struct is_receiver{};
+
+    friend void tag_invoke(vkr::exec::set_value_t, TestReceiver&&, auto&& ... args) noexcept
+    {
+        (std::cout << ... << args) << '\n';
+    }
+
+    friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, const std::exception& e) noexcept
+    {
+        std::cout << e.what() << '\n';
+    }
+
+    friend void tag_invoke(vkr::exec::set_stopped_t, TestReceiver&&) noexcept
+    {
+        std::cout << "stopped\n";
+    } 
+
+};
+
 int main()
 {
     std::cout << vkr::forwarding_query(vkr::get_allocator) << '\n';
@@ -28,7 +50,15 @@ int main()
     std::cout << vkr::type_count_v<F1> << '\n';
     std::cout << vkr::type_count_v<F2> << '\n';
 
-    vkr::exec::sender auto just_sender = vkr::exec::just(1, 0.5f, '0');
+    vkr::exec::sender auto just_sender = vkr::exec::just(1, " ", 0.5f, " ", '0');
     vkr::exec::sender auto just_error_sender = vkr::exec::just_error(std::runtime_error("test error"));
     vkr::exec::sender auto just_stopped_sender = vkr::exec::just_stopped();
+
+    vkr::exec::operation_state auto op1 = vkr::exec::connect(just_sender, TestReceiver{});
+    vkr::exec::operation_state auto op2 = vkr::exec::connect(just_error_sender, TestReceiver{});
+    vkr::exec::operation_state auto op3 = vkr::exec::connect(just_stopped_sender, TestReceiver{});
+    
+    vkr::exec::start(op1);
+    vkr::exec::start(op2);
+    vkr::exec::start(op3);
 }

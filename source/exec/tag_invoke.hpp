@@ -15,7 +15,7 @@ namespace vkr
                 noexcept(noexcept(tag_invoke(std::forward<Tag>(tag), std::forward<Args>(args)...)))
                 -> decltype(tag_invoke(std::forward<Tag>(tag), std::forward<Args>(args)...))
             {
-                tag_invoke(std::forward<Tag>(tag), std::forward<Args>(args)...);
+                return tag_invoke(std::forward<Tag>(tag), std::forward<Args>(args)...);
             }
         };
     }// namespace _tag_invoke

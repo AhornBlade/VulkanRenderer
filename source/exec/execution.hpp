@@ -274,7 +274,7 @@ namespace vkr::exec
             constexpr auto operator()(R&& r, Args&& ... args) const noexcept
                 -> tag_invoke_result_t<Tag, R, Args...>
             {
-                return tag_invoke(Tag{}, std::forward<R>(r), std::forward<Args...>(args...));
+                return tag_invoke(Tag{}, std::forward<R>(r), std::forward<Args>(args)...);
             }
         };
 
@@ -314,14 +314,6 @@ namespace vkr::exec
     inline constexpr set_error_t set_error{};
     inline constexpr set_stopped_t set_stopped{};
 
-    template<typename O>
-    concept operation_state = queryable<O> &&
-        std::is_object_v<O> && 
-        requires(O& o)
-        {
-            {start(o)} noexcept;
-        };
-
     namespace op_state
     {
         struct start_t
@@ -340,6 +332,14 @@ namespace vkr::exec
 
     using op_state::start_t;
     inline constexpr start_t start{};
+
+    template<typename O>
+    concept operation_state = queryable<O> &&
+        std::is_object_v<O> && 
+        requires(O& o)
+        {
+            {start(o)} noexcept;
+        };
 
     template<typename S>
     inline constexpr bool enable_sender = requires{typename S::is_sender; };
@@ -493,19 +493,19 @@ namespace vkr::exec
                 friend void tag_invoke(start_t, operation& op) noexcept
                 {
                     std::apply([&](Ts& ... args){
-                        Tag{}(std::move(op.r_), std::move(args...));
+                        Tag{}(std::move(op.r_), std::move(args)...);
                     }, op.values_);
                 }
             };
 
             template<typename Self, typename R>
-                requires std::same_as<std::decay_t<Self>, just_sender> &&
-                    std::constructible_from<operation<std::decay_t<R>>, Self, R>
+                requires std::same_as<std::decay_t<Self>, just_sender>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_constructible_v<operation<std::decay_t<R>>, Self, R>)
+                noexcept(noexcept(operation<std::decay_t<R>>{std::forward<Self>(self).values_, std::forward<R>(r)}))
                 -> operation<std::decay_t<R>>
+                requires requires{operation<std::decay_t<R>>{std::forward<Self>(self).values_, std::forward<R>(r)};}
             {
-                return operation<std::decay_t<R>>{std::forward<Self>(self), std::forward<R>(r)};
+                return operation<std::decay_t<R>>{std::forward<Self>(self).values_, std::forward<R>(r)};
             }
 
             std::tuple<Ts...> values_;
@@ -516,12 +516,12 @@ namespace vkr::exec
             using Tag = set_value_t;
 
             template<typename ... Ts>
-                requires std::constructible_from<std::tuple<std::remove_cvref_t<Ts>...>, Ts...>
+                requires std::constructible_from<std::tuple<std::decay_t<Ts>...>, Ts...>
             constexpr auto operator()(Ts&& ... args) const
-                noexcept(std::is_nothrow_constructible_v<std::tuple<std::remove_cvref_t<Ts>...>, Ts...>)
-                -> just_sender<Tag, std::remove_cvref_t<Ts>...>
+                noexcept(std::is_nothrow_constructible_v<std::tuple<std::decay_t<Ts>...>, Ts...>)
+                -> just_sender<Tag, std::decay_t<Ts>...>
             {
-                return just_sender<Tag, std::remove_cvref_t<Ts>...>{{std::forward<Ts>(args)...}};
+                return just_sender<Tag, std::decay_t<Ts>...>{{std::forward<Ts>(args)...}};
             }
         };
 
@@ -530,12 +530,12 @@ namespace vkr::exec
             using Tag = set_error_t;
 
             template<typename E>
-                requires std::constructible_from<std::tuple<std::remove_cvref_t<E>>, E>
+                requires std::constructible_from<std::tuple<std::decay_t<E>>, E>
             constexpr auto operator()(E&& error) const
-                noexcept(std::is_nothrow_constructible_v<std::tuple<std::remove_cvref_t<E>>, E>)
-                -> just_sender<Tag, std::remove_cvref_t<E>>
+                noexcept(std::is_nothrow_constructible_v<std::tuple<std::decay_t<E>>, E>)
+                -> just_sender<Tag, std::decay_t<E>>
             {
-                return just_sender<Tag, std::remove_cvref_t<E>>{{std::forward<E>(error)}};
+                return just_sender<Tag, std::decay_t<E>>{{std::forward<E>(error)}};
             }
         };
 
@@ -677,6 +677,100 @@ namespace vkr::exec
         }
     }// namespace queries
 
+    template<typename Base = void>
+    struct receiver_adaptor_base
+    {
+        template<typename Derived>
+            requires std::derived_from<std::remove_cvref_t<Derived>, receiver_adaptor_base>
+        friend decltype(auto) get_base(Derived&& d) noexcept
+        {
+            return static_cast<receiver_adaptor_base>(d).base_;
+        }
+
+        Base base_;
+    };
+
+    template<>
+    struct receiver_adaptor_base<void>
+    {
+        template<typename Derived>
+            requires std::derived_from<std::remove_cvref_t<Derived>, receiver_adaptor_base>
+        friend decltype(auto) get_base(Derived&& d) noexcept
+        {
+            return d.base();
+        }
+    };
+
+    template<class_type Derived, typename Base = void>
+    class receiver_adaptor : public receiver_adaptor_base<Base>
+    {
+        friend Derived;
+    public:
+        struct is_receiver{};
+
+        receiver_adaptor() = default;
+
+        template<typename B>
+            requires std::constructible_from<Base, B>
+        explicit receiver_adaptor(B&& base) :receiver_adaptor_base<Base>(std::forward<B>(base)){}
+
+        template<typename ... As>
+        friend void tag_invoke(set_value_t, Derived&& self, As&& ... as) noexcept
+            requires requires{{std::move(self).set_value(std::forward<As>(as)...)} noexcept; }
+        {
+            std::move(self).set_value(std::forward<As>(as)...);
+        }
+
+        template<typename ... As>
+        friend void tag_invoke(set_value_t, Derived&& self, As&& ... as) noexcept
+            requires (!requires{{std::move(self).set_value(std::forward<As>(as)...)} noexcept; }) &&
+                std::invocable<set_value_t, decltype(std::move(get_base(self))), As...>
+        {
+            set_value(std::move(get_base(self)), std::forward<As>(as)...);
+        }
+
+        template<typename E>
+        friend void tag_invoke(set_error_t, Derived&& self, E&& e) noexcept
+            requires requires{ {std::move(self).set_error(std::forward<E>(e))} noexcept; }
+        {
+            std::move(self).set_error(std::forward<E>(e));
+        }
+
+        template<typename E>
+        friend void tag_invoke(set_error_t, Derived&& self, E&& e) noexcept
+            requires (!requires{ {std::move(self).set_error(std::forward<E>(e))} noexcept; }) &&
+                std::invocable<set_error_t, decltype(std::move(get_base(self))), E>
+        {
+            set_error(std::move(get_base(self)), std::forward<E>(e));
+        }
+
+        friend void tag_invoke(set_stopped_t, Derived&& self) noexcept
+            requires requires{ {std::move(self).set_stopped()} noexcept; }
+        {
+            std::move(self).set_stopped();
+        }
+
+        friend void tag_invoke(set_stopped_t, Derived&& self) noexcept
+            requires (!requires{ {std::move(self).set_stopped()} noexcept; }) &&
+                std::invocable<set_stopped_t, decltype(std::move(get_base(self)))>
+        {
+            set_stopped(std::move(get_base(self)));
+        }
+
+        friend decltype(auto) tag_invoke(get_env_t, Derived&& self) 
+            noexcept( noexcept(self.get_env()) )
+            requires requires{ self.get_env(); }
+        {
+            self.get_env();
+        }
+
+        friend decltype(auto) tag_invoke(get_env_t, const Derived& self)
+            noexcept( noexcept(get_env(get_base(self))) )
+            requires (!requires{ self.get_env(); }) && requires{get_env(get_base(self)); }
+        {
+            get_env(get_base(self));
+        }
+    };
 
 }// namespace vkr::exec
 
