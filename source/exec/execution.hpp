@@ -110,6 +110,7 @@ namespace vkr
             }
 
             template<typename O>
+                requires (!tag_invocable<Tag, const O&>)
             constexpr auto operator()(O&& o) const noexcept
             {
                 return empty_env{};
@@ -761,14 +762,14 @@ namespace vkr::exec
             noexcept( noexcept(self.get_env()) )
             requires requires{ self.get_env(); }
         {
-            self.get_env();
+            return self.get_env();
         }
 
         friend decltype(auto) tag_invoke(get_env_t, const Derived& self)
             noexcept( noexcept(get_env(get_base(self))) )
             requires (!requires{ self.get_env(); }) && requires{get_env(get_base(self)); }
         {
-            get_env(get_base(self));
+            return get_env(get_base(self));
         }
     };
 

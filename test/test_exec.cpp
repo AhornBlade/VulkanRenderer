@@ -37,7 +37,19 @@ public:
     {
         std::cout << "stopped\n";
     } 
+};
 
+template<typename R>
+class TestReceiverAdaptor: public vkr::exec::receiver_adaptor<TestReceiverAdaptor<R>, R>
+{
+public:
+    using vkr::exec::receiver_adaptor<TestReceiverAdaptor<R>, R>::receiver_adaptor;
+
+    template<typename ... Ts>
+    void set_value(Ts&& ... args) && noexcept
+    {
+        vkr::exec::set_value(std::move(get_base(*this)), "TestReceiverAdaptor out ", std::forward<Ts>(args)...);
+    }
 };
 
 int main()
@@ -61,4 +73,8 @@ int main()
     vkr::exec::start(op1);
     vkr::exec::start(op2);
     vkr::exec::start(op3);
+
+    vkr::exec::operation_state auto op4 = vkr::exec::connect(just_sender, TestReceiverAdaptor<TestReceiver>{});
+
+    vkr::exec::start(op4);
 }
