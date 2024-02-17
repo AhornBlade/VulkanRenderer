@@ -212,6 +212,9 @@ namespace vkr::exec
     template<typename CPO>
     inline constexpr get_completion_scheduler_t<CPO> get_completion_scheduler{};
 
+    template<typename CPO, typename Q>
+    using completion_scheduler_of_t = std::invoke_result_t<get_completion_scheduler_t<CPO>, Q>;
+
     template<typename R>
     inline constexpr bool enable_receiver = requires { typename R::is_receiver; };
 
@@ -221,7 +224,7 @@ namespace vkr::exec
         std::move_constructible<std::remove_cvref_t<R>> &&
         std::constructible_from<std::remove_cvref_t<R>, R>;
 
-    template<typename Fn>
+    template<typename Sig>
     struct completion_signature_traits;
 
     template<typename Tag, typename ... Args>
@@ -244,12 +247,15 @@ namespace vkr::exec
             {}(args);
         };
 
-    template<valid_completion ... Fns>
+    template<valid_completion ... Sigs>
     struct completion_signatures
     {
         struct is_completion_signatures{};
 
-        using Type = type_list<Fns...>;
+        using Type = type_list<Sigs...>;
+
+        template<template<typename ...> typename Fn>
+        using apply = Fn<Sigs...>;
     };
 
     template<typename Sigs>
@@ -354,14 +360,6 @@ namespace vkr::exec
         std::move_constructible<std::remove_cvref_t<S>> &&
         std::constructible_from<std::remove_cvref_t<S>, S>;
 
-    template<typename S, typename E = empty_env>
-    concept sender_in = sender<S> &&
-        requires(S&& s, E&& e)
-        {
-            {get_completion_signatures(std::forward<S>(s), std::forward<E>(e))} 
-                -> valid_completion_signatures;
-        };
-
     namespace signatures
     {
         struct get_completion_signatures_t
@@ -369,8 +367,7 @@ namespace vkr::exec
             using Tag = get_completion_signatures_t;
 
             template<typename S, typename E>
-                requires sender_in<S, E> &&
-                    nothrow_tag_invocable<Tag, S, E>
+                requires nothrow_tag_invocable<Tag, S, E>
             consteval auto operator()(S&& s, E&& e) const noexcept
                 -> tag_invoke_result_t<Tag, S, E>
             {
@@ -378,8 +375,7 @@ namespace vkr::exec
             }
 
             template<typename S, typename E>
-                requires sender_in<S, E> &&
-                    (!nothrow_tag_invocable<Tag, S, E>) &&
+                requires (!nothrow_tag_invocable<Tag, S, E>) &&
                     requires{typename S::completion_signatures;}
             consteval auto operator()(S&& s, E&& e) const noexcept
                 -> typename S::completion_signatures
@@ -391,6 +387,14 @@ namespace vkr::exec
 
     using signatures::get_completion_signatures_t;
     inline constexpr get_completion_signatures_t get_completion_signatures{};
+
+    template<typename S, typename E = empty_env>
+    concept sender_in = sender<S> &&
+        requires(S&& s, E&& e)
+        {
+            {get_completion_signatures(std::forward<S>(s), std::forward<E>(e))} 
+                -> valid_completion_signatures;
+        };
 
     template<typename S, typename E>
         requires sender_in<S, E>
@@ -449,6 +453,24 @@ namespace vkr::exec
         requires sender_in<S, E>
     inline constexpr bool sends_stopped = !std::is_same_v<
         gather_signatures<set_stopped_t, S, E, type_list, type_list>, type_list<>>;
+
+    template<typename ... Ts>
+    using default_set_value = set_value_t(Ts...);
+
+    template<typename E>
+    using default_set_error = set_error_t(E);
+
+    template<sender S, typename E = empty_env, 
+        valid_completion_signatures AddSigs = completion_signatures<>,
+        template<typename...> typename SetValue = default_set_value,
+        template<typename> typename SetError = default_set_error,
+        valid_completion_signatures SetStopped = completion_signatures<set_stopped_t()>>
+    using make_completion_signatures = 
+        concat_type_sets_t<completion_signatures<
+            AddSigs, 
+            value_types_of_t<S, E, SetValue, completion_signatures>, 
+            error_types_of_t<S, E, completion_signatures>,
+            SetStopped>>;
 
     namespace sender_connect
     {
@@ -703,17 +725,16 @@ namespace vkr::exec
     };
 
     template<class_type Derived, typename Base = void>
-    class receiver_adaptor : public receiver_adaptor_base<Base>
+    struct receiver_adaptor : public receiver_adaptor_base<Base>
     {
         friend Derived;
-    public:
         struct is_receiver{};
 
         receiver_adaptor() = default;
 
         template<typename B>
             requires std::constructible_from<Base, B>
-        explicit receiver_adaptor(B&& base) :receiver_adaptor_base<Base>(std::forward<B>(base)){}
+        receiver_adaptor(B&& base) :receiver_adaptor_base<Base>(std::forward<B>(base)){}
 
         template<typename ... As>
         friend void tag_invoke(set_value_t, Derived&& self, As&& ... as) noexcept
@@ -772,6 +793,104 @@ namespace vkr::exec
             return get_env(get_base(self));
         }
     };
+
+    namespace sender_adaptors
+    {
+        template<class_type T>
+        struct sender_adaptor_closure{};
+
+        template<typename R, typename F>
+        struct then_receiver : public receiver_adaptor<then_receiver<R, F>, R>
+        {
+            template<typename ... Ts>
+            void set_value(Ts&& ... args) && noexcept
+            {
+                exec::set_value(std::move(get_base(*this)), std::move(this->f_)(std::forward<Ts>(args)...));
+            }
+
+            F f_;
+        };
+
+        template<typename S, typename F>
+        struct then_sender : public sender_adaptor_closure<then_sender<S, F>>
+        {
+            struct is_sender{};
+
+            template<typename ... Ts>
+            using SetValue = completion_signatures<set_value_t(std::invoke_result_t<F, Ts...>)>;
+
+            template<typename Self, typename Env>
+                requires std::same_as<std::remove_cvref_t<Self>, then_sender>
+            friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
+                ->make_completion_signatures<S, Env, completion_signatures<>, SetValue>
+            {
+                return {};
+            }
+
+            template<typename Self, receiver R>
+                requires std::same_as<std::remove_cvref_t<Self>, then_sender> &&
+                    std::invocable<connect_t, S, then_receiver<std::remove_cvref_t<R>,F>>
+            friend auto tag_invoke(connect_t, Self&& self, R&& r)
+                noexcept(std::is_nothrow_invocable_v<connect_t, S, then_receiver<std::remove_cvref_t<R>,F>>)
+                -> connect_result_t<S, then_receiver<std::remove_cvref_t<R>,F>>
+            {
+                return connect(std::forward<Self>(self).s_, then_receiver<std::remove_cvref_t<R>,F>
+                    {{std::forward<R>(r)}, std::forward<Self>(self).f_});
+            }
+
+            friend decltype(auto) tag_invoke(get_env_t, const then_sender& self) noexcept
+            {
+                return get_env(self.s_);
+            }
+
+            S s_;
+            F f_;
+        };
+
+        struct then_t : public sender_adaptor_closure<then_t>
+        {
+            using Tag = then_t;
+
+            template<sender S, typename F>
+                requires requires{typename completion_scheduler_of_t<set_value_t, env_of_t<S>>;} &&
+                    tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>
+            constexpr auto operator()(S&& s, F&& f) const
+                noexcept(nothrow_tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>)
+                -> tag_invoke_result_t<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>
+            {
+                return tag_invoke(Tag{}, get_completion_scheduler<set_value_t>(get_env(s)), 
+                    std::forward<S>(s), std::forward<F>(f));
+            }
+
+            template<sender S, typename F>
+                requires ((!requires{typename completion_scheduler_of_t<set_value_t, env_of_t<S>>;}) ||
+                    (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>)) &&
+                    tag_invocable<Tag, S, F>
+            constexpr auto operator()(S&& s, F&& f) const
+                noexcept(nothrow_tag_invocable<Tag, S, F>)
+                -> tag_invoke_result_t<Tag, S, F>
+            {
+                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<F>(f));
+            }
+
+            template<sender S, typename F>
+                requires ((!requires{typename completion_scheduler_of_t<set_value_t, env_of_t<S>>;}) ||
+                    (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>)) &&
+                    (!tag_invocable<Tag, S, F>)
+            constexpr auto operator()(S&& s, F&& f) const noexcept
+                -> then_sender<std::remove_cvref_t<S>, std::decay_t<F>>
+            {
+                return then_sender<std::remove_cvref_t<S>, std::decay_t<F>>{
+                    {}, std::forward<S>(s), std::forward<F>(f)};
+            }
+        };
+
+    }// namespace sender_adaptors
+
+    using sender_adaptors::sender_adaptor_closure;
+    using sender_adaptors::then_t;
+
+    inline constexpr then_t then{};
 
 }// namespace vkr::exec
 

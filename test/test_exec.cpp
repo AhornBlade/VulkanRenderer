@@ -66,6 +66,15 @@ int main()
     vkr::exec::sender auto just_error_sender = vkr::exec::just_error(std::runtime_error("test error"));
     vkr::exec::sender auto just_stopped_sender = vkr::exec::just_stopped();
 
+    using JustSig = vkr::exec::completion_signatures_of_t<decltype(just_sender), vkr::empty_env>;
+    using JustSetValue = vkr::exec::value_types_of_t<decltype(just_sender), vkr::empty_env, 
+        vkr::type_list, vkr::type_list>;
+    using JustSetError = vkr::exec::error_types_of_t<decltype(just_sender), vkr::empty_env, 
+        vkr::type_list>;
+    constexpr bool JustStopped = vkr::exec::sends_stopped<decltype(just_sender), vkr::empty_env>;
+
+    using MakeJustSig = vkr::exec::make_completion_signatures<decltype(just_sender), vkr::empty_env>;
+
     vkr::exec::operation_state auto op1 = vkr::exec::connect(just_sender, TestReceiver{});
     vkr::exec::operation_state auto op2 = vkr::exec::connect(just_error_sender, TestReceiver{});
     vkr::exec::operation_state auto op3 = vkr::exec::connect(just_stopped_sender, TestReceiver{});
@@ -77,4 +86,11 @@ int main()
     vkr::exec::operation_state auto op4 = vkr::exec::connect(just_sender, TestReceiverAdaptor<TestReceiver>{});
 
     vkr::exec::start(op4);
+
+    vkr::exec::sender auto then_sender = vkr::exec::then(just_sender, 
+        []<typename ... Ts>(Ts...) -> uint32_t {return sizeof...(Ts);});
+
+    vkr::exec::operation_state auto op5 = vkr::exec::connect(then_sender, TestReceiver{});
+
+    vkr::exec::start(op5);
 }

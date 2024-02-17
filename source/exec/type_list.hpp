@@ -86,15 +86,18 @@ namespace vkr
             TypeList<Us...>>::Type;
     };
 
-    struct concat_type_sets
+    template<typename ... TypeLists>
+    struct concat_type_sets;
+
+    template<typename First, typename ... TypeLists>
+    struct concat_type_sets<First, TypeLists...>
     {
-        template<typename ... Ts>
-        using apply = concat_type_sets_impl<type_list<>, type_list<Ts...>>::Type;
+        using Type = concat_type_sets_impl<typename type_list_traits<First>::template temp<>, 
+            typename concat_type_lists<First, TypeLists...>::Type>::Type;
     };
 
     template<typename TypeLists>
-    using concat_type_sets_t = concat_type_sets_impl<
-        typename type_list_traits<TypeLists>::template temp<>, TypeLists>::Type;
+    using concat_type_sets_t = TypeLists::template apply<concat_type_sets>::Type;
 
     template<template <typename> typename Fn, typename Ts, typename Us>
     struct fliter_type_impl;
