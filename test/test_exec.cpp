@@ -28,9 +28,26 @@ public:
         (std::cout << ... << args) << '\n';
     }
 
+    friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, std::string_view sv) noexcept
+    {
+        std::cout << "std::string_view " << sv << '\n';
+    }
+
     friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, const std::exception& e) noexcept
     {
-        std::cout << e.what() << '\n';
+        std::cout << "std::exception " << e.what() << '\n';
+    }
+
+    friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, std::exception_ptr eptr) noexcept
+    {
+        try {
+            if(eptr)
+            {
+                std::rethrow_exception(eptr);
+            }
+        } catch (const std::exception& e) {
+            std::cout << "std::exception_ptr " << e.what() << '\n';
+        }
     }
 
     friend void tag_invoke(vkr::exec::set_stopped_t, TestReceiver&&) noexcept
@@ -84,13 +101,16 @@ int main()
     vkr::exec::start(op3);
 
     vkr::exec::operation_state auto op4 = vkr::exec::connect(just_sender, TestReceiverAdaptor<TestReceiver>{});
-
     vkr::exec::start(op4);
 
     vkr::exec::sender auto then_sender = vkr::exec::then(just_sender, 
         []<typename ... Ts>(Ts...) -> uint32_t {return sizeof...(Ts);});
-
+    auto then_sig = vkr::exec::get_completion_signatures(then_sender, vkr::empty_env{});
     vkr::exec::operation_state auto op5 = vkr::exec::connect(then_sender, TestReceiver{});
-
     vkr::exec::start(op5);
+
+    vkr::exec::sender auto upon_error_sender = vkr::exec::upon_error(just_error_sender,
+        [](const std::exception& e) { return e.what(); });
+    vkr::exec::operation_state auto op6 = vkr::exec::connect(upon_error_sender, TestReceiver{});
+    vkr::exec::start(op6);
 }

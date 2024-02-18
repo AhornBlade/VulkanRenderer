@@ -805,7 +805,12 @@ namespace vkr::exec
             template<typename ... Ts>
             void set_value(Ts&& ... args) && noexcept
             {
-                exec::set_value(std::move(get_base(*this)), std::move(this->f_)(std::forward<Ts>(args)...));
+                try{
+                    exec::set_value(std::move(get_base(*this)), std::move(this->f_)(std::forward<Ts>(args)...));
+                }catch(...)
+                {
+                    exec::set_error(std::move(get_base(*this)), std::current_exception());
+                }
             }
 
             F f_;
@@ -885,12 +890,101 @@ namespace vkr::exec
             }
         };
 
+        template<typename R, typename F>
+        struct upon_error_receiver : receiver_adaptor<upon_error_receiver<R, F>, R>
+        {
+            template<typename E>
+            void set_error(E&& e) && noexcept
+            {
+                try {
+                    exec::set_error(std::move(get_base(*this)), std::move(this->f_)(std::forward<E>(e)));
+                } catch (...) {
+                    exec::set_error(std::move(get_base(*this)), std::current_exception());
+                }
+            }
+
+            F f_;
+        };
+
+        template<typename S, typename F>
+        struct upon_error_sender : sender_adaptor_closure<upon_error_sender<S, F>>
+        {
+            struct is_sender{};
+
+            template<typename E>
+            using SetError = completion_signatures<set_error_t(std::invoke_result_t<F, E>)>;
+
+            template<typename Self, typename Env>
+                requires std::same_as<upon_error_sender, std::remove_cvref_t<Self>>
+            friend constexpr auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
+                -> make_completion_signatures<upon_error_sender, Env, completion_signatures<>, 
+                default_set_value, SetError> 
+            {
+                return {}; 
+            }
+
+            template<typename Self, receiver R>
+                requires std::same_as<upon_error_sender, std::remove_cvref_t<Self>> &&
+                    std::invocable<connect_t, S, upon_error_receiver<std::remove_cvref_t<R>, F>>
+            friend auto tag_invoke(connect_t, Self&& self, R&& r) 
+                noexcept(std::is_nothrow_invocable_v<connect_t, S, upon_error_receiver<std::remove_cvref_t<R>, F>>)
+                -> connect_result_t<S, upon_error_receiver<std::remove_cvref_t<R>, F>>
+            {
+                return connect(std::forward<Self>(self).s_, upon_error_receiver<std::remove_cvref_t<R>, F>
+                    {{std::forward<R>(r)}, std::forward<Self>(self).f_});
+            }
+
+            friend decltype(auto) tag_invoke(get_env_t, const upon_error_sender& self) noexcept
+            {
+                return get_env(self.s_);
+            }
+
+            S s_;
+            F f_;
+        };
+
+        struct upon_error_t : public sender_adaptor_closure<upon_error_t>
+        {
+            using Tag = upon_error_t;
+
+            template<sender S, typename F>
+                requires std::invocable<get_completion_scheduler_t<set_error_t>, env_of_t<S>> &&
+                    tag_invocable<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>
+            constexpr auto operator()(S&& s, F&& f) const
+                noexcept(nothrow_tag_invocable<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>)
+                -> tag_invoke_result_t<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>
+            {
+                return tag_invoke(Tag{}, get_completion_scheduler<set_error_t>(get_env(s)), 
+                    std::forward<S>(s), std::forward<F>(f));
+            }
+
+            template<sender S, typename F>
+                requires ((!std::invocable<get_completion_scheduler_t<set_error_t>, env_of_t<S>>) ||
+                    (!tag_invocable<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>)) &&
+                    tag_invocable<Tag, S, F>
+            constexpr auto operator()(S&& s, F&& f) const
+                noexcept(nothrow_tag_invocable<Tag, S, F>)
+                -> tag_invoke_result_t<Tag, S, F>
+            {
+                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<F>(f));
+            }
+
+            template<sender S, typename F>
+            constexpr auto operator()(S&& s, F&& f) const noexcept
+                -> upon_error_sender<std::remove_cvref_t<S>, std::decay_t<F>>
+            {
+                return {{}, std::forward<S>(s), std::forward<F>(f)};
+            }
+        };
+
     }// namespace sender_adaptors
 
     using sender_adaptors::sender_adaptor_closure;
     using sender_adaptors::then_t;
+    using sender_adaptors::upon_error_t;
 
     inline constexpr then_t then{};
+    inline constexpr upon_error_t upon_error{};
 
 }// namespace vkr::exec
 
