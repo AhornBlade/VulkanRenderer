@@ -25,17 +25,18 @@ public:
 
     friend void tag_invoke(vkr::exec::set_value_t, TestReceiver&&, auto&& ... args) noexcept
     {
+        std::cout << "set_value ";
         (std::cout << ... << args) << '\n';
     }
 
     friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, std::string_view sv) noexcept
     {
-        std::cout << "std::string_view " << sv << '\n';
+        std::cout << "set_error std::string_view " << sv << '\n';
     }
 
     friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, const std::exception& e) noexcept
     {
-        std::cout << "std::exception " << e.what() << '\n';
+        std::cout << "set_error std::exception " << e.what() << '\n';
     }
 
     friend void tag_invoke(vkr::exec::set_error_t, TestReceiver&&, std::exception_ptr eptr) noexcept
@@ -46,7 +47,7 @@ public:
                 std::rethrow_exception(eptr);
             }
         } catch (const std::exception& e) {
-            std::cout << "std::exception_ptr " << e.what() << '\n';
+            std::cout << "set_error std::exception_ptr " << e.what() << '\n';
         }
     }
 
@@ -113,4 +114,9 @@ int main()
         [](const std::exception& e) { return e.what(); });
     vkr::exec::operation_state auto op6 = vkr::exec::connect(upon_error_sender, TestReceiver{});
     vkr::exec::start(op6);
+
+    vkr::exec::sender auto upon_stopped_sender = vkr::exec::upon_stopped(just_stopped_sender,
+        []{});
+    vkr::exec::operation_state auto op7 = vkr::exec::connect(upon_stopped_sender, TestReceiver{});
+    vkr::exec::start(op7);
 }

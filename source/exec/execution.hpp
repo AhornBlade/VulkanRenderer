@@ -794,6 +794,22 @@ namespace vkr::exec
         }
     };
 
+    template<typename F, typename ... Args>
+    struct set_value_sig 
+    {
+        using Type = set_value_t(std::invoke_result_t<F, Args...>);
+    };
+
+    template<typename F, typename ... Args>
+        requires std::is_void_v<std::invoke_result_t<F, Args...>>
+    struct set_value_sig<F, Args...>
+    {
+        using Type = set_value_t();
+    };
+
+    template<typename F, typename ... Args>
+    using set_value_sig_t = set_value_sig<F, Args...>::Type;
+
     namespace sender_adaptors
     {
         template<class_type T>
@@ -806,7 +822,15 @@ namespace vkr::exec
             void set_value(Ts&& ... args) && noexcept
             {
                 try{
-                    exec::set_value(std::move(get_base(*this)), std::move(this->f_)(std::forward<Ts>(args)...));
+                    if constexpr(std::is_void_v<std::invoke_result_t<F&&, Ts...>>)
+                    {
+                        std::move(this->f_)(std::forward<Ts>(args)...);
+                        exec::set_value(std::move(get_base(*this)));
+                    }
+                    else
+                    {
+                        exec::set_value(std::move(get_base(*this)), std::move(this->f_)(std::forward<Ts>(args)...));
+                    }
                 }catch(...)
                 {
                     exec::set_error(std::move(get_base(*this)), std::current_exception());
@@ -822,7 +846,10 @@ namespace vkr::exec
             struct is_sender{};
 
             template<typename ... Ts>
-            using SetValue = completion_signatures<set_value_t(std::invoke_result_t<F, Ts...>)>;
+            using SetValue = completion_signatures<
+                set_value_sig_t<F, Ts...>,
+                std::conditional_t<std::is_nothrow_invocable_v<F, Ts...>, 
+                    set_error_t(), set_error_t(std::exception_ptr)>>;
 
             template<typename Self, typename Env>
                 requires std::same_as<std::remove_cvref_t<Self>, then_sender>
@@ -885,8 +912,7 @@ namespace vkr::exec
             constexpr auto operator()(S&& s, F&& f) const noexcept
                 -> then_sender<std::remove_cvref_t<S>, std::decay_t<F>>
             {
-                return then_sender<std::remove_cvref_t<S>, std::decay_t<F>>{
-                    {}, std::forward<S>(s), std::forward<F>(f)};
+                return {{}, std::forward<S>(s), std::forward<F>(f)};
             }
         };
 
@@ -897,7 +923,15 @@ namespace vkr::exec
             void set_error(E&& e) && noexcept
             {
                 try {
-                    exec::set_error(std::move(get_base(*this)), std::move(this->f_)(std::forward<E>(e)));
+                    if constexpr(std::is_void_v<std::invoke_result_t<F&&, E>>)
+                    {
+                        std::move(this->f_)(std::forward<E>(e));
+                        exec::set_value(std::move(get_base(*this)));
+                    }
+                    else
+                    {
+                        exec::set_value(std::move(get_base(*this)), std::move(this->f_)(std::forward<E>(e)));
+                    }
                 } catch (...) {
                     exec::set_error(std::move(get_base(*this)), std::current_exception());
                 }
@@ -912,12 +946,15 @@ namespace vkr::exec
             struct is_sender{};
 
             template<typename E>
-            using SetError = completion_signatures<set_error_t(std::invoke_result_t<F, E>)>;
+            using SetError = completion_signatures<
+                set_value_sig_t<F, E>,
+                std::conditional_t<std::is_nothrow_invocable_v<F, E>, 
+                    set_error_t(), set_error_t(std::exception_ptr)>>;
 
             template<typename Self, typename Env>
                 requires std::same_as<upon_error_sender, std::remove_cvref_t<Self>>
             friend constexpr auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
-                -> make_completion_signatures<upon_error_sender, Env, completion_signatures<>, 
+                -> make_completion_signatures<upon_error_sender, Env, completion_signatures<>,
                 default_set_value, SetError> 
             {
                 return {}; 
@@ -970,8 +1007,113 @@ namespace vkr::exec
             }
 
             template<sender S, typename F>
+                requires ((!std::invocable<get_completion_scheduler_t<set_error_t>, env_of_t<S>>) ||
+                    (!tag_invocable<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>)) &&
+                    (!tag_invocable<Tag, S, F>)
             constexpr auto operator()(S&& s, F&& f) const noexcept
                 -> upon_error_sender<std::remove_cvref_t<S>, std::decay_t<F>>
+            {
+                return {{}, std::forward<S>(s), std::forward<F>(f)};
+            }
+        };
+
+        template<typename R, typename F>
+        struct upon_stopped_receiver : public receiver_adaptor<upon_stopped_receiver<R, F>, R>
+        {
+            void set_stopped() && noexcept
+            {
+                try
+                {
+                    if constexpr(std::is_void_v<std::invoke_result_t<F>>)
+                    {
+                        std::move(this->f_)();
+                        exec::set_value(std::move(get_base(*this)));
+                    }
+                    else
+                    {
+                        exec::set_value(std::move(get_base(*this)), std::move(this->f_)());
+                    }
+                }catch(...)
+                {
+                    exec::set_error(std::move(get_base(*this)), std::current_exception());
+                }
+            }
+
+            F f_;
+        };
+
+        template<typename S, typename F>
+        struct upon_stopped_sender : sender_adaptor_closure<upon_stopped_sender<S, F>>
+        {
+            struct is_sender{};
+
+            using SetStopped = completion_signatures<
+                set_value_sig_t<F>,
+                std::conditional_t<std::is_nothrow_invocable_v<F>, 
+                    set_error_t(), set_error_t(std::exception_ptr)>>;
+
+            template<typename Self, typename Env>
+                requires std::same_as<upon_stopped_sender, std::remove_cvref_t<Self>>
+            friend constexpr auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
+                -> make_completion_signatures<upon_stopped_sender, Env, completion_signatures<>,
+                default_set_value, default_set_error, SetStopped> 
+            {
+                return {}; 
+            }
+
+            template<typename Self, receiver R>
+                requires std::same_as<upon_stopped_sender, std::remove_cvref_t<Self>> &&
+                    std::invocable<connect_t, S, upon_stopped_receiver<std::remove_cvref_t<R>, F>>
+            friend auto tag_invoke(connect_t, Self&& self, R&& r)
+                noexcept(std::is_nothrow_invocable_v<connect_t, S, 
+                    upon_stopped_receiver<std::remove_cvref_t<R>, F>>)
+                -> std::invoke_result_t<connect_t, S, upon_stopped_receiver<std::remove_cvref_t<R>, F>>
+            {
+                return connect(std::forward<Self>(self).s_, upon_stopped_receiver<std::remove_cvref_t<R>, F>
+                    {{std::forward<R>(r)}, std::forward<Self>(self).f_});
+            }
+
+            friend decltype(auto) tag_invoke(get_env_t, const upon_stopped_sender& self) noexcept
+            {
+                return get_env(self.s_);
+            }
+
+            S s_;
+            F f_;
+        };
+
+        struct upon_stopped_t
+        {
+            using Tag = upon_stopped_t;
+
+            template<sender S, typename F>
+                requires std::invocable<get_completion_scheduler_t<set_stopped_t>, env_of_t<S>> &&
+                    tag_invocable<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>
+            constexpr auto operator()(S&& s, F&& f) const
+                noexcept(nothrow_tag_invocable<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>)
+                -> tag_invoke_result_t<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>
+            {
+                return tag_invoke(Tag{}, get_completion_scheduler<set_stopped_t>(get_env(s)), 
+                    std::forward<S>(s), std::forward<F>(f));
+            }
+
+            template<sender S, typename F>
+                requires ((!std::invocable<get_completion_scheduler_t<set_stopped_t>, env_of_t<S>>) ||
+                    (!tag_invocable<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>)) &&
+                    tag_invocable<Tag, S, F>
+            constexpr auto operator()(S&& s, F&& f) const
+                noexcept(nothrow_tag_invocable<Tag, S, F>)
+                -> tag_invoke_result_t<Tag, S, F>
+            {
+                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<F>(f));
+            }
+
+            template<sender S, typename F>
+                requires ((!std::invocable<get_completion_scheduler_t<set_stopped_t>, env_of_t<S>>) ||
+                    (!tag_invocable<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>)) &&
+                    (!tag_invocable<Tag, S, F>)
+            constexpr auto operator()(S&& s, F&& f) const noexcept
+                -> upon_stopped_sender<std::remove_cvref_t<S>, std::decay_t<F>>
             {
                 return {{}, std::forward<S>(s), std::forward<F>(f)};
             }
@@ -982,9 +1124,11 @@ namespace vkr::exec
     using sender_adaptors::sender_adaptor_closure;
     using sender_adaptors::then_t;
     using sender_adaptors::upon_error_t;
+    using sender_adaptors::upon_stopped_t;
 
     inline constexpr then_t then{};
     inline constexpr upon_error_t upon_error{};
+    inline constexpr upon_stopped_t upon_stopped{};
 
 }// namespace vkr::exec
 
