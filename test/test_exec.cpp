@@ -119,4 +119,10 @@ int main()
         []{});
     vkr::exec::operation_state auto op7 = vkr::exec::connect(upon_stopped_sender, TestReceiver{});
     vkr::exec::start(op7);
+
+    vkr::exec::sender auto pipe_sender = 
+        vkr::exec::just(42) |
+        vkr::exec::then([](int i)-> int{ return i * 2;});
+    vkr::exec::operation_state auto op8 = vkr::exec::connect(pipe_sender, TestReceiver{});
+    vkr::exec::start(op8);
 }
