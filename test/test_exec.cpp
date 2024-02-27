@@ -1,6 +1,7 @@
 #include <exec/execution.hpp>
 
 #include <iostream>
+#include <format>
 
 using List1 = vkr::type_list<int, bool, int>;
 using List2 = vkr::type_list<bool, float>;
@@ -70,6 +71,21 @@ public:
     }
 };
 
+struct Test
+{
+    Test() = default;
+    Test(const Test&) { std::cout << "copy constructor\n";}
+    Test(Test&&) noexcept { std::cout << "move constructor\n";}
+    Test& operator=(const Test&) {std::cout << "copy assignment\n"; return *this;}
+    Test& operator=(Test&&) noexcept {std::cout << "move assignment\n"; return *this;}
+
+    friend std::ostream& operator<<(std::ostream& out, const Test& test)
+    {
+        out << " Test ";
+        return out;
+    }
+};
+
 int main()
 {
     std::cout << vkr::forwarding_query(vkr::get_allocator) << '\n';
@@ -122,7 +138,30 @@ int main()
 
     vkr::exec::sender auto pipe_sender = 
         vkr::exec::just(42) |
-        vkr::exec::then([](int i)-> int{ return i * 2;});
+        vkr::exec::then([](int i){ return i * 2;});
     vkr::exec::operation_state auto op8 = vkr::exec::connect(pipe_sender, TestReceiver{});
     vkr::exec::start(op8);
+
+    vkr::exec::sender auto pipe_sender2 = 
+        vkr::exec::just_error(std::runtime_error("just error")) |
+        vkr::exec::upon_error([](const std::exception& e) {return e.what();});
+    vkr::exec::operation_state auto op9 = vkr::exec::connect(pipe_sender2, TestReceiver{});
+    vkr::exec::start(op9);
+
+    vkr::exec::scheduler auto inline_scheduler = vkr::exec::inline_scheduler{};
+
+    Test test{};
+    vkr::exec::sender auto test_just = vkr::exec::just(std::move(test));
+    vkr::exec::sender auto test_then = vkr::exec::then(test_just, [](const Test&){return 1;});
+    vkr::exec::sender auto test_on = vkr::exec::on(inline_scheduler, test_then);
+    using TestOP2Sigs = vkr::exec::completion_signatures_of_t<decltype(test_then), vkr::empty_env>;
+    vkr::exec::operation_state auto test_op = vkr::exec::connect(test_just, TestReceiver{});
+    vkr::exec::start(test_op);
+
+    vkr::exec::operation_state auto test_op2 = 
+        vkr::exec::connect(
+            vkr::exec::on(inline_scheduler) |
+            vkr::exec::just(Test{}) | 
+            vkr::exec::then([](const Test&){return 1;}), TestReceiver{});
+    vkr::exec::start(test_op2);
 }
