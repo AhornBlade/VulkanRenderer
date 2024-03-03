@@ -1,7 +1,10 @@
 #include <exec/execution.hpp>
+#include <exec/scheduler.hpp>
 
 #include <iostream>
 #include <format>
+
+using namespace std::chrono_literals;
 
 using List1 = vkr::type_list<int, bool, int>;
 using List2 = vkr::type_list<bool, float>;
@@ -23,6 +26,11 @@ class TestReceiver
 {
 public:
     struct is_receiver{};
+
+    friend void tag_invoke(vkr::exec::set_value_t, TestReceiver&&) noexcept
+    {
+
+    }
 
     friend void tag_invoke(vkr::exec::set_value_t, TestReceiver&&, auto&& ... args) noexcept
     {
@@ -84,6 +92,20 @@ struct Test
         out << " Test ";
         return out;
     }
+};
+
+struct TestOpHandle
+{
+    void execute()
+    {
+        std::cout << "TestOP\n";
+    }
+
+    TestOpHandle() = default;
+    TestOpHandle(const TestOpHandle&) = delete;
+    TestOpHandle& operator=(const TestOpHandle&) = delete;
+    TestOpHandle(TestOpHandle&&) noexcept = default;
+    TestOpHandle& operator=(TestOpHandle&&) noexcept = default;
 };
 
 int main()
@@ -164,4 +186,24 @@ int main()
             vkr::exec::just(Test{}) | 
             vkr::exec::then([](const Test&){return 1;}), TestReceiver{});
     vkr::exec::start(test_op2);
+
+    std::cout << "main thread id: " << std::this_thread::get_id() << '\n';
+
+    vkr::exec::thread_run_loop test_loop{3};
+    vkr::exec::scheduler auto loop_sch = vkr::exec::get_scheduler(test_loop);
+    vkr::exec::sender auto loop_sender = 
+        vkr::exec::on(loop_sch) |
+        vkr::exec::just() |
+        vkr::exec::then([]
+        {
+            std::cout << "thread id: " << std::this_thread::get_id() << '\n';
+        });
+    vkr::exec::operation_state auto loop_op = 
+        vkr::exec::connect(loop_sender, TestReceiver{});
+    for(uint32_t index = 0; index < 10; index++)
+    {
+        vkr::exec::start(loop_op);
+    }
+
+    std::this_thread::sleep_for(1s);
 }

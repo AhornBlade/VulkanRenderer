@@ -3,6 +3,8 @@
 #include <utility>
 #include <tuple>
 #include <variant>
+#include <thread>
+#include <mutex>
 
 #include "tag_invoke.hpp"
 #include "stop_token.hpp"
@@ -99,7 +101,7 @@ namespace vkr
 
     namespace envs
     {
-        struct empty_env;
+        struct empty_env{};
 
         struct get_env_t
         {
@@ -115,7 +117,10 @@ namespace vkr
 
             template<typename O>
                 requires (!tag_invocable<Tag, const O&>)
-            constexpr auto operator()(O&& o) const noexcept;
+            constexpr auto operator()(O&& o) const noexcept
+            {
+                return empty_env{};
+            }
         };
     }// namespace envs
 
@@ -909,16 +914,17 @@ namespace vkr::exec
                 return {};
             }
 
-            template<std::derived_from<on_sender> Self, receiver R>
+            template<decays_to<on_sender> Self, receiver R>
                 requires std::invocable<connect_t, schedule_result_t<Sch>, 
-                    on_receiver<std::remove_cvref_t<R>, S, Sch>>
+                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
                 noexcept(std::is_nothrow_invocable_v<connect_t, schedule_result_t<Sch>, 
-                    on_receiver<std::remove_cvref_t<R>, S, Sch>>)
-                -> connect_result_t<schedule_result_t<Sch>, on_receiver<std::remove_cvref_t<R>, S, Sch>>
+                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>)
+                -> connect_result_t<schedule_result_t<Sch>, 
+                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>
             {
                 return connect(schedule(std::forward<Self>(self).sch_), 
-                    on_receiver<std::remove_cvref_t<R>, S, Sch>
+                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>
                     {std::forward<R>(r), std::forward<Self>(self).s_, std::forward<Self>(self).sch_});
             }
 
@@ -995,11 +1001,14 @@ namespace vkr::exec
             }
 
             template<decays_to<then_sender> Self, receiver R>
-                requires std::invocable<connect_t, S, then_receiver<std::remove_cvref_t<R>,F>>
+                requires std::invocable<connect_t, decltype(std::declval<Self>().s_), 
+                    then_receiver<std::remove_cvref_t<R>,F>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_invocable_v<connect_t, S, then_receiver<std::remove_cvref_t<R>,F>> &&
+                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
+                    then_receiver<std::remove_cvref_t<R>,F>> &&
                     nothrow_movable_value<R> && nothrow_movable_value<Self>)
-                -> connect_result_t<S, then_receiver<std::remove_cvref_t<R>,F>>
+                -> connect_result_t<decltype(std::declval<Self>().s_), 
+                    then_receiver<std::remove_cvref_t<R>,F>>
             {
                 return connect(std::forward<Self>(self).s_, then_receiver<std::remove_cvref_t<R>,F>
                     {std::forward<R>(r), std::forward<Self>(self).f_});
@@ -1098,11 +1107,14 @@ namespace vkr::exec
             }
 
             template<decays_to<upon_error_sender> Self, receiver R>
-                requires std::invocable<connect_t, S, upon_error_receiver<std::remove_cvref_t<R>, F>>
+                requires std::invocable<connect_t, decltype(std::declval<Self>().s_), 
+                    upon_error_receiver<std::remove_cvref_t<R>, F>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r) 
-                noexcept(std::is_nothrow_invocable_v<connect_t, S, upon_error_receiver<std::remove_cvref_t<R>, F>> &&
+                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
+                    upon_error_receiver<std::remove_cvref_t<R>, F>> &&
                     nothrow_movable_value<Self> && nothrow_movable_value<R>)
-                -> connect_result_t<S, upon_error_receiver<std::remove_cvref_t<R>, F>>
+                -> connect_result_t<decltype(std::declval<Self>().s_), 
+                    upon_error_receiver<std::remove_cvref_t<R>, F>>
             {
                 return connect(std::forward<Self>(self).s_, upon_error_receiver<std::remove_cvref_t<R>, F>
                     {std::forward<R>(r), std::forward<Self>(self).f_});
@@ -1202,11 +1214,14 @@ namespace vkr::exec
             }
 
             template<decays_to<upon_stopped_sender> Self, receiver R>
-                requires std::invocable<connect_t, S, upon_stopped_receiver<std::remove_cvref_t<R>, F>>
+                requires std::invocable<connect_t, decltype(std::declval<Self>().s_), 
+                    upon_stopped_receiver<std::remove_cvref_t<R>, F>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_invocable_v<connect_t, S, upon_stopped_receiver<std::remove_cvref_t<R>, F>> &&
+                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
+                    upon_stopped_receiver<std::remove_cvref_t<R>, F>> &&
                     nothrow_movable_value<Self> && nothrow_movable_value<R>)
-                -> std::invoke_result_t<connect_t, S, upon_stopped_receiver<std::remove_cvref_t<R>, F>>
+                -> std::invoke_result_t<connect_t, decltype(std::declval<Self>().s_), 
+                    upon_stopped_receiver<std::remove_cvref_t<R>, F>>
             {
                 return connect(std::forward<Self>(self).s_, upon_stopped_receiver<std::remove_cvref_t<R>, F>
                     {std::forward<R>(r), std::forward<Self>(self).f_});
@@ -1274,87 +1289,7 @@ namespace vkr::exec
     inline constexpr upon_error_t upon_error{};
     inline constexpr upon_stopped_t upon_stopped{};
 
-    namespace schedulers
-    {
-        struct inline_scheduler
-        {
-            struct env_
-            {
-                template<typename Tag>
-                friend inline_scheduler tag_invoke(exec::get_completion_scheduler_t<Tag>, const env_&) noexcept
-                {
-                    return inline_scheduler{};
-                }
-            };
-
-            struct sender_
-            {
-                using is_sender = void;
-
-                using completion_signatures = exec::completion_signatures<set_value_t()>;
-
-                template<typename R>
-                struct operation
-                {
-                    friend void tag_invoke(start_t, operation& self) noexcept
-                    {
-                        set_value(std::move(self.r_));
-                    }
-
-                    R r_;
-                };
-
-                template<decays_to<sender_> Self, receiver R>
-                friend auto tag_invoke(connect_t, Self&&, R&& r)
-                    noexcept(nothrow_movable_value<R>)
-                    ->operation<std::remove_cvref_t<R>>
-                {
-                    return {std::forward<R>(r)};
-                }
-
-                friend env_ tag_invoke(get_env_t, const sender_& self) noexcept
-                {
-                    return {};
-                }
-            };
-
-            friend sender_ tag_invoke(schedule_t, const inline_scheduler& self) noexcept
-            {
-                return {};
-            }
-
-            bool operator==(const inline_scheduler& other) const
-            {
-                return this == &other;
-            }
-        };
-
-        
-
-    }// namespace schedulers
-
-    using schedulers::inline_scheduler;
-
 }// namespace vkr::exec
-
-namespace vkr::envs
-{
-    struct empty_env
-    {
-        template<typename Tag>
-        friend exec::inline_scheduler tag_invoke(exec::get_completion_scheduler_t<Tag>, const empty_env&) noexcept
-        {
-            return {};
-        }
-    };
-
-    template<typename O>
-        requires (!tag_invocable<get_env_t, const O&>)
-    constexpr auto get_env_t::operator()(O&& o) const noexcept
-    {
-        return empty_env{};
-    }
-}
 
 namespace vkr::queries
 {
