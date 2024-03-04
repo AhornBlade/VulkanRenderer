@@ -189,14 +189,21 @@ int main()
 
     std::cout << "main thread id: " << std::this_thread::get_id() << '\n';
 
-    vkr::exec::thread_run_loop test_loop{3};
-    vkr::exec::scheduler auto loop_sch = vkr::exec::get_scheduler(test_loop);
+    vkr::exec::thread_run_loop test_loop_1{3};
+    vkr::exec::thread_run_loop test_loop_2{3};
+    vkr::exec::scheduler auto loop_sch_1 = vkr::exec::get_scheduler(test_loop_1);
+    vkr::exec::scheduler auto loop_sch_2 = vkr::exec::get_scheduler(test_loop_2);
     vkr::exec::sender auto loop_sender = 
-        vkr::exec::on(loop_sch) |
-        vkr::exec::just() |
-        vkr::exec::then([]
+        vkr::exec::schedule_from(loop_sch_1, 
+            vkr::exec::on(loop_sch_2) |
+            vkr::exec::just() |
+            vkr::exec::then([]
+            {
+                return std::this_thread::get_id();
+            }))|
+        vkr::exec::then([](std::thread::id id)
         {
-            std::cout << "thread id: " << std::this_thread::get_id() << '\n';
+            std::cout << "before: " << id << " , after: " << std::this_thread::get_id() << '\n';
         });
     vkr::exec::operation_state auto loop_op = 
         vkr::exec::connect(loop_sender, TestReceiver{});
