@@ -200,13 +200,16 @@ int main()
             vkr::exec::then([]
             {
                 return std::this_thread::get_id();
-            }))|
+            }));
+    using TestSigScheduleFrom = vkr::exec::completion_signatures_of_t<decltype(loop_sender), vkr::empty_env>;
+    vkr::exec::sender auto loop_sender_then = 
+        loop_sender |
         vkr::exec::then([](std::thread::id id)
         {
             std::cout << "before: " << id << " , after: " << std::this_thread::get_id() << '\n';
         });
     vkr::exec::operation_state auto loop_op = 
-        vkr::exec::connect(loop_sender, TestReceiver{});
+        vkr::exec::connect(loop_sender_then, TestReceiver{});
     for(uint32_t index = 0; index < 10; index++)
     {
         vkr::exec::start(loop_op);

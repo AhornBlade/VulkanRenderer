@@ -174,4 +174,17 @@ namespace vkr
     template<typename T, typename Ts>
     inline constexpr bool is_include_type_v = is_include_type<T, Ts>::value;
 
+    template<typename F>
+    struct function_invocable
+    {
+        template<typename ... Ts>
+        using apply = std::is_invocable<F, Ts...>;
+    };
+
+    template<typename ... Ts>
+    struct and_all
+    {
+        static constexpr bool value = (Ts::value && ...);
+    };
+
 }// namespace vkr

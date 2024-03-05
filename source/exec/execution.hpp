@@ -382,11 +382,11 @@ namespace vkr::exec
 
             template<typename S, typename E>
                 requires (!nothrow_tag_invocable<Tag, S, E>) &&
-                    requires{typename S::completion_signatures;}
+                    requires{typename std::remove_cvref_t<S>::completion_signatures;}
             consteval auto operator()(S&& s, E&& e) const noexcept
-                -> typename S::completion_signatures
+                -> typename std::remove_cvref_t<S>::completion_signatures
             {
-                return typename S::completion_signatures{};
+                return typename std::remove_cvref_t<S>::completion_signatures{};
             }
         };
     }// namespace signatures
@@ -475,7 +475,7 @@ namespace vkr::exec
         concat_type_sets_t<completion_signatures<
             AddSigs, 
             concat_type_sets_t<value_types_of_t<S, E, SetValue, completion_signatures>>, 
-            concat_type_sets_t<error_types_of_t<S, E, completion_signatures>>,
+            concat_type_sets_t<gather_signatures<set_error_t, S, E, SetError, completion_signatures>>,
             SetStopped>>;
 
     namespace sender_connect
@@ -934,7 +934,9 @@ namespace vkr::exec
             template<sender S, movable_value F>
                 requires ((!requires{typename completion_scheduler_of_t<set_value_t, env_of_t<S>>;}) ||
                     (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>)) &&
-                    tag_invocable<Tag, S, F>
+                    tag_invocable<Tag, S, F> &&
+                    gather_signatures<set_value_t, S, empty_env, function_invocable<F>::template apply,
+                    and_all>::value
             constexpr auto operator()(S&& s, F&& f) const
                 noexcept(nothrow_tag_invocable<Tag, S, F>)
                 -> tag_invoke_result_t<Tag, S, F>
@@ -945,7 +947,9 @@ namespace vkr::exec
             template<sender S, movable_value F>
                 requires ((!requires{typename completion_scheduler_of_t<set_value_t, env_of_t<S>>;}) ||
                     (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, F>)) &&
-                    (!tag_invocable<Tag, S, F>)
+                    (!tag_invocable<Tag, S, F>) &&
+                    gather_signatures<set_value_t, S, empty_env, function_invocable<F>::template apply,
+                    and_all>::value
             constexpr auto operator()(S&& s, F&& f) const 
                 noexcept(nothrow_movable_value<S> && nothrow_movable_value<F>)
                 -> then_sender<std::remove_cvref_t<S>, std::decay_t<F>>
@@ -1041,7 +1045,9 @@ namespace vkr::exec
             template<sender S, movable_value F>
                 requires ((!std::invocable<get_completion_scheduler_t<set_error_t>, env_of_t<S>>) ||
                     (!tag_invocable<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>)) &&
-                    tag_invocable<Tag, S, F>
+                    tag_invocable<Tag, S, F> &&
+                    gather_signatures<set_error_t, S, empty_env, function_invocable<F>::template apply,
+                    and_all>::value
             constexpr auto operator()(S&& s, F&& f) const
                 noexcept(nothrow_tag_invocable<Tag, S, F>)
                 -> tag_invoke_result_t<Tag, S, F>
@@ -1052,7 +1058,9 @@ namespace vkr::exec
             template<sender S, movable_value F>
                 requires ((!std::invocable<get_completion_scheduler_t<set_error_t>, env_of_t<S>>) ||
                     (!tag_invocable<Tag, completion_scheduler_of_t<set_error_t, env_of_t<S>>, S, F>)) &&
-                    (!tag_invocable<Tag, S, F>)
+                    (!tag_invocable<Tag, S, F>) &&
+                    gather_signatures<set_error_t, S, empty_env, function_invocable<F>::template apply,
+                    and_all>::value
             constexpr auto operator()(S&& s, F&& f) const 
                 noexcept(nothrow_movable_value<S> && nothrow_movable_value<F>)
                 -> upon_error_sender<std::remove_cvref_t<S>, std::decay_t<F>>
@@ -1147,7 +1155,7 @@ namespace vkr::exec
             template<sender S, movable_value F>
                 requires ((!std::invocable<get_completion_scheduler_t<set_stopped_t>, env_of_t<S>>) ||
                     (!tag_invocable<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>)) &&
-                    tag_invocable<Tag, S, F>
+                    tag_invocable<Tag, S, F> && std::invocable<F>
             constexpr auto operator()(S&& s, F&& f) const
                 noexcept(nothrow_tag_invocable<Tag, S, F>)
                 -> tag_invoke_result_t<Tag, S, F>
@@ -1158,7 +1166,7 @@ namespace vkr::exec
             template<sender S, movable_value F>
                 requires ((!std::invocable<get_completion_scheduler_t<set_stopped_t>, env_of_t<S>>) ||
                     (!tag_invocable<Tag, completion_scheduler_of_t<set_stopped_t, env_of_t<S>>, S, F>)) &&
-                    (!tag_invocable<Tag, S, F>)
+                    (!tag_invocable<Tag, S, F>) && std::invocable<F>
             constexpr auto operator()(S&& s, F&& f) const 
                 noexcept(nothrow_movable_value<S> && nothrow_movable_value<F>)
                 -> upon_stopped_sender<std::remove_cvref_t<S>, std::decay_t<F>>
