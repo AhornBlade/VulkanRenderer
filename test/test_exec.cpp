@@ -196,8 +196,7 @@ int main()
     vkr::exec::scheduler auto loop_sch_1 = vkr::exec::get_scheduler(test_loop_1);
     vkr::exec::scheduler auto loop_sch_2 = vkr::exec::get_scheduler(test_loop_2);
     vkr::exec::sender auto loop_sender = 
-        vkr::exec::on(loop_sch_1) |
-        vkr::exec::just() |
+        vkr::exec::transfer_just(loop_sch_1) |
         vkr::exec::then([]
         {
             std::this_thread::sleep_for(1ms);

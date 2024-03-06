@@ -590,25 +590,6 @@ namespace vkr::exec
             }
         };
 
-        struct transfer_just_t
-        {
-            using Tag = transfer_just_t;
-
-            template<typename Sch, typename ... Ts>
-                requires tag_invocable<Tag, Sch, Ts...>
-            constexpr auto operator()(Sch&& sch, Ts&& ... args) const
-                noexcept(nothrow_tag_invocable<Tag, Sch, Ts...>)
-                -> tag_invoke_result_t<Tag, Sch, Ts...>
-            {
-                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<Ts>(args)...);
-            }
-
-            // template<typename Sch, typename ... Ts>
-            //     requires (!tag_invocable<Tag, Sch, Ts...>) && 
-            //     tag_invocable<transfer_t, just_sender<set_value_t, std::remove_cvref_t<Ts>...>, Sch>
-            // constexpr auto operator()(Sch&& sch, Ts&& ... args) const;
-        };
-
         template<typename Tag>
         struct read_sender
         {
@@ -665,13 +646,11 @@ namespace vkr::exec
     using sender_factories::just_error_t;
     using sender_factories::just_stopped_t;
     using sender_factories::schedule_t;
-    using sender_factories::transfer_just_t;
     using sender_factories::read_t;
     inline constexpr just_t just{};
     inline constexpr just_error_t just_error{};
     inline constexpr just_stopped_t just_stopped{};
     inline constexpr schedule_t schedule{};
-    inline constexpr transfer_just_t transfer_just{};
     inline constexpr read_t read{};
 
     template<typename S>
@@ -1441,3 +1420,35 @@ namespace vkr::queries
     }
 
 }// namespace vkr::queries
+
+namespace vkr::exec
+{
+    namespace sender_factories
+    {
+        struct transfer_just_t
+        {
+            using Tag = transfer_just_t;
+
+            template<typename Sch, typename ... Ts>
+                requires tag_invocable<Tag, Sch, Ts...>
+            constexpr auto operator()(Sch&& sch, Ts&& ... args) const
+                noexcept(nothrow_tag_invocable<Tag, Sch, Ts...>)
+                -> tag_invoke_result_t<Tag, Sch, Ts...>
+            {
+                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<Ts>(args)...);
+            }
+
+            template<typename Sch, typename ... Ts>
+                requires (!tag_invocable<Tag, Sch, Ts...>) && 
+                std::invocable<transfer_t, just_sender<set_value_t, std::remove_cvref_t<Ts>...>, Sch>
+            constexpr auto operator()(Sch&& sch, Ts&& ... args) const
+            {
+                return transfer(just(std::forward<Ts>(args)...), std::forward<Sch>(sch));
+            }
+        };
+    }// namespace sender_factories
+
+    using sender_factories::transfer_just_t;
+    inline constexpr transfer_just_t transfer_just{};
+
+}// namespace vkr::exec
