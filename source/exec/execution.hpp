@@ -1350,6 +1350,8 @@ namespace vkr::exec
         {
             using Tag = schedule_from_t;
 
+            using sender_adaptor_base<schedule_from_t>::operator();
+
             template<scheduler Sch, sender S>
                 requires tag_invocable<Tag, Sch, S>
             constexpr auto operator()(Sch&& sch, S&& s) const
@@ -1369,6 +1371,44 @@ namespace vkr::exec
             }
         };
 
+        struct transfer_t: public sender_adaptor_base<transfer_t>
+        {
+            using Tag = transfer_t;
+
+            using sender_adaptor_base<transfer_t>::operator();
+
+            template<sender S, scheduler Sch>
+                requires tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>
+            constexpr auto operator()(S&& s, Sch&& sch) const
+                noexcept(nothrow_tag_invocable<Tag, completion_scheduler_of_t<set_value_t, 
+                    env_of_t<S>>, S, Sch>)
+                -> tag_invoke_result_t<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>
+            {
+                return tag_invoke(Tag{}, get_completion_scheduler_t<set_value_t>(get_env_t(s)), 
+                    std::forward<S>(s), std::forward<Sch>(sch));
+            }
+
+            template<sender S, scheduler Sch>
+                requires (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>) &&
+                    tag_invocable<Tag, S, Sch>
+            constexpr auto operator()(S&& s, Sch&& sch) const
+                noexcept(nothrow_tag_invocable<Tag, S, Sch>)
+                -> tag_invoke_result_t<Tag, S, Sch>
+            {
+                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<Sch>(sch));
+            }
+
+            template<sender S, scheduler Sch>
+                requires (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>) &&
+                    (!tag_invocable<Tag, S, Sch>)
+            constexpr auto operator()(S&& s, Sch&& sch) const
+                noexcept(std::is_nothrow_invocable_v<schedule_from_t, Sch, S>)
+                -> std::invoke_result_t<schedule_from_t, Sch, S>
+            {
+                return schedule_from_t{}(std::forward<Sch>(sch), std::forward<S>(s));
+            }
+        };
+
     }// namespace sender_adaptors
 
     using sender_adaptors::sender_adaptor_closure;
@@ -1377,12 +1417,14 @@ namespace vkr::exec
     using sender_adaptors::upon_stopped_t;
     using sender_adaptors::on_t;
     using sender_adaptors::schedule_from_t;
+    using sender_adaptors::transfer_t;
 
     inline constexpr then_t then{};
     inline constexpr upon_error_t upon_error{};
     inline constexpr upon_stopped_t upon_stopped{};
     inline constexpr on_t on{};
     inline constexpr schedule_from_t schedule_from{};
+    inline constexpr transfer_t transfer{};
 
 }// namespace vkr::exec
 
