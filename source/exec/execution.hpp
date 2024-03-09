@@ -500,7 +500,13 @@ namespace vkr::exec
         requires std::invocable<connect_t, S, R>
     using connect_result_t = std::invoke_result_t<connect_t, S, R>;
 
-    // struct transfer_t;
+    template<typename S, typename R>
+    concept sender_to = sender_in<S, env_of_t<R>> &&
+        receiver_of<R, completion_signatures_of_t<S, env_of_t<R>>> &&
+        requires (S&& s, R && r)
+        {
+            connect(std::forward<S>(s), std::forward<R>(r));
+        };
 
     namespace sender_factories
     {
@@ -903,13 +909,13 @@ namespace vkr::exec
             }
 
             template<decays_to<upon_sender> Self, receiver R>
-                requires std::invocable<connect_t, decltype(std::declval<Self>().s_), 
+                requires sender_to<decltype(std::declval<Self>().s_), 
                     upon_receiver<CPO, std::remove_cvref_t<R>, F>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
                 noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
                     upon_receiver<CPO, std::remove_cvref_t<R>, F>> && 
                     nothrow_movable_value<Self> && nothrow_movable_value<R>)
-                -> std::invoke_result_t<connect_t, decltype(std::declval<Self>().s_), 
+                -> connect_result_t<decltype(std::declval<Self>().s_), 
                     upon_receiver<CPO, std::remove_cvref_t<R>, F>>
             {
                 return connect(std::forward<Self>(self).s_, upon_receiver<CPO, std::remove_cvref_t<R>, F>
@@ -1034,7 +1040,7 @@ namespace vkr::exec
             }
 
             template<decays_to<on_sender> Self, receiver R>
-                requires std::invocable<connect_t, schedule_result_t<Sch>, 
+                requires sender_to<schedule_result_t<Sch>, 
                     on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
                 noexcept(std::is_nothrow_invocable_v<connect_t, schedule_result_t<Sch>, 
@@ -1121,12 +1127,12 @@ namespace vkr::exec
             }
 
             template<decays_to<schedule_from_sender> Self, receiver R>
-                requires std::invocable<connect_t, decltype(std::declval<Self>().s_), 
+                requires sender_to<decltype(std::declval<Self>().s_), 
                     schedule_from_receiver<Sch, std::remove_cvref_t<R>>>
             friend auto tag_invoke(connect_t, Self&& self, R&& r)
                 noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
                     schedule_from_receiver<Sch, std::remove_cvref_t<R>>>)
-                -> std::invoke_result_t<connect_t, decltype(std::declval<Self>().s_), 
+                -> connect_result_t<decltype(std::declval<Self>().s_), 
                     schedule_from_receiver<Sch, std::remove_cvref_t<R>>>
             {
                 return connect(std::forward<Self>(self).s_, 
