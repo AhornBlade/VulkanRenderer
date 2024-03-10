@@ -974,16 +974,25 @@ namespace vkr::exec
         using upon_stopped_t = upon<set_stopped_t>;
 
         template<typename Sch, typename Env>
-        struct on_receiver_wrapper_env
+        struct replace_scheduler_env
         {
-            friend Sch tag_invoke(get_scheduler_t, const on_receiver_wrapper_env& self) noexcept
+            friend Sch tag_invoke(get_scheduler_t, const replace_scheduler_env& self) noexcept
+            {
+                return self.sch_;
+            }
+
+            template<typename CPO>
+                requires std::same_as<CPO, set_value_t> || std::same_as<CPO, set_stopped_t>
+            friend Sch tag_invoke(get_completion_scheduler_t<CPO>, const replace_scheduler_env& self) noexcept
             {
                 return self.sch_;
             }
 
             template<forwardingable_query Tag>
-                requires (!std::same_as<Tag, get_scheduler_t>)
-            friend auto tag_invoke(Tag tag, const on_receiver_wrapper_env& self) noexcept
+                requires (!std::same_as<Tag, get_scheduler_t>) && 
+                    (!std::same_as<Tag, get_completion_scheduler_t<set_value_t>>) &&
+                    (!std::same_as<Tag, get_completion_scheduler_t<set_stopped_t>>)
+            friend auto tag_invoke(Tag tag, const replace_scheduler_env& self) noexcept
                 -> std::invoke_result_t<Tag, const Env&>
             {
                 return tag(self.env_);
@@ -996,7 +1005,7 @@ namespace vkr::exec
         template<typename R, typename Sch>
         struct on_receiver_wrapper : public receiver_adaptor<on_receiver_wrapper<R, Sch>, R>
         {
-            on_receiver_wrapper_env<Sch, env_of_t<R>> get_env() noexcept
+            replace_scheduler_env<Sch, env_of_t<R>> get_env() noexcept
             {
                 return {this->sch_, get_env(get_base(*this))};
             }
@@ -1033,7 +1042,7 @@ namespace vkr::exec
             template<decays_to<on_sender> Self, typename Env>
             friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
                 -> make_completion_signatures<decltype(std::declval<Self>().s_), 
-                on_receiver_wrapper_env<Sch, Env>, make_completion_signatures<schedule_result_t<Sch>, 
+                replace_scheduler_env<Sch, Env>, make_completion_signatures<schedule_result_t<Sch>, 
                 Env, completion_signatures<set_error_t(std::exception_ptr)>, SetValue>>
             {
                 return {};
@@ -1051,6 +1060,12 @@ namespace vkr::exec
                 return connect(schedule(std::forward<Self>(self).sch_), 
                     on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>
                     {std::forward<R>(r), std::forward<Self>(self).s_, std::forward<Self>(self).sch_});
+            }
+
+            friend auto tag_invoke(get_env_t, const on_sender& self) noexcept
+                -> replace_scheduler_env<Sch, env_of_t<S>>
+            {
+                return {self.sch_, get_env(self.s_)};
             }
 
             Sch sch_;
@@ -1138,6 +1153,12 @@ namespace vkr::exec
                 return connect(std::forward<Self>(self).s_, 
                     schedule_from_receiver<Sch, std::remove_cvref_t<R>>
                     {std::forward<R>(r), std::forward<Self>(self).sch_});
+            }
+            
+            friend auto tag_invoke(get_env_t, const schedule_from_sender& self) noexcept
+                -> replace_scheduler_env<Sch, env_of_t<S>>
+            {
+                return {self.sch_, get_env(self.s_)};
             }
 
             Sch sch_;

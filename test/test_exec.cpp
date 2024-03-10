@@ -193,24 +193,21 @@ int main()
 
     vkr::exec::thread_run_loop test_loop_1{3};
     vkr::exec::thread_run_loop test_loop_2{3};
-    vkr::exec::scheduler auto loop_sch_1 = vkr::exec::get_scheduler(test_loop_1);
-    vkr::exec::scheduler auto loop_sch_2 = vkr::exec::get_scheduler(test_loop_2);
     vkr::exec::sender auto loop_sender = 
-        vkr::exec::transfer_just(loop_sch_1) |
+        vkr::exec::transfer_just(vkr::exec::get_scheduler(test_loop_1)) |
         vkr::exec::then([]
         {
             std::this_thread::sleep_for(1ms);
             return std::this_thread::get_id();
         }) |
-        vkr::exec::transfer(loop_sch_2) |
+        vkr::exec::transfer(vkr::exec::get_scheduler(test_loop_2)) |
         vkr::exec::then([&](std::thread::id id)
         {
             std::unique_lock lock{mutex_};
             std::this_thread::sleep_for(1ms);
             std::cout << "before: " << id << ", after: " << std::this_thread::get_id() << '\n';
         });
-    vkr::exec::operation_state auto loop_op = 
-        vkr::exec::connect(loop_sender, TestReceiver{});
+    vkr::exec::operation_state auto loop_op = vkr::exec::connect(loop_sender, TestReceiver{});
     for(uint32_t index = 0; index < 10; index++)
     {
         vkr::exec::start(loop_op);

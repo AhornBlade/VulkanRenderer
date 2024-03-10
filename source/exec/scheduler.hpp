@@ -280,4 +280,9 @@ namespace vkr::envs
     {
         return {};
     }
-}
+
+    inline exec::inline_scheduler tag_invoke(exec::get_scheduler_t, const empty_env&) noexcept
+    {
+        return {};
+    }
+}// namespace vkr::envs
