@@ -175,10 +175,13 @@ namespace vkr
     inline constexpr bool is_include_type_v = is_include_type<T, Ts>::value;
 
     template<typename F>
-    struct function_invocable
+    struct function_trait
     {
         template<typename ... Ts>
-        using apply = std::is_invocable<F, Ts...>;
+        using invocable = std::is_invocable<F, Ts...>;
+
+        template<typename ... Ts>
+        using invoke_result = std::invoke_result_t<F, Ts...>;
     };
 
     template<typename ... Ts>
