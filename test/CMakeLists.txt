@@ -8,5 +8,4 @@ target_link_libraries(test_core
 
 add_executable(test_exec "test_exec.cpp")
 target_link_libraries(test_exec
-	PUBLIC VulkanRenderer::exec
-	PUBLIC Catch2::Catch2)
+	PUBLIC VulkanRenderer::exec)
