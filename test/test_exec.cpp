@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <format>
+#include <span>
 
 using namespace std::chrono_literals;
 
@@ -219,4 +220,34 @@ int main()
     }
 
     std::this_thread::sleep_for(1s);
+
+    int bulk_count = 5;
+    std::vector<int> bulk_vector{};
+
+    vkr::exec::sender auto bulk_sender = 
+        vkr::exec::just(std::move(bulk_vector)) |
+        vkr::exec::then([bulk_count](std::vector<int>&& v)
+        {
+            v.resize(bulk_count * (bulk_count + 1) / 2);
+            return std::move(v);
+        }) |
+        vkr::exec::bulk(bulk_count, [](int n, std::span<int> v)
+        {
+            auto begin = v.begin() + (n * (n + 1) / 2);
+            auto end = begin + n + 1;
+            for(int i = 0; begin != end; begin++, i++)
+            {
+                *begin = i;
+            }
+        }) |
+        vkr::exec::then([](std::vector<int>&& v)
+        {
+            for(auto&& n : v)
+            {
+                std::cout << n << ' ';
+            }
+            std::cout << '\n';
+        });
+    vkr::exec::operation_state auto bulk_op = vkr::exec::connect(bulk_sender, TestReceiver{});
+    vkr::exec::start(bulk_op);
 }
