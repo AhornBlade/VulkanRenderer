@@ -946,9 +946,9 @@ namespace vkr::exec
         };
 
         template<typename CPO>
-        struct upon
+        struct upon_t
         {
-            using Tag = upon;
+            using Tag = upon_t;
 
             template<movable_value F>
             constexpr auto operator()(F&& f) const
@@ -990,282 +990,9 @@ namespace vkr::exec
             }
         };
 
-        using then_t = upon<set_value_t>;
-        using upon_error_t = upon<set_error_t>;
-        using upon_stopped_t = upon<set_stopped_t>;
-
-        template<typename Sch, typename Env>
-        struct replace_scheduler_env
-        {
-            friend Sch tag_invoke(get_scheduler_t, const replace_scheduler_env& self) noexcept
-            {
-                return self.sch_;
-            }
-
-            template<typename CPO>
-                requires std::same_as<CPO, set_value_t> || std::same_as<CPO, set_stopped_t>
-            friend Sch tag_invoke(get_completion_scheduler_t<CPO>, const replace_scheduler_env& self) noexcept
-            {
-                return self.sch_;
-            }
-
-            template<forwardingable_query Tag>
-                requires (!std::same_as<Tag, get_scheduler_t>) && 
-                    (!std::same_as<Tag, get_completion_scheduler_t<set_value_t>>) &&
-                    (!std::same_as<Tag, get_completion_scheduler_t<set_stopped_t>>)
-            friend auto tag_invoke(Tag tag, const replace_scheduler_env& self) noexcept
-                -> std::invoke_result_t<Tag, const Env&>
-            {
-                return tag(self.env_);
-            }
-
-            Sch sch_;
-            Env env_;
-        };
-
-        template<typename R, typename Sch>
-        struct on_receiver_wrapper : public receiver_adaptor<on_receiver_wrapper<R, Sch>, R>
-        {
-            replace_scheduler_env<Sch, env_of_t<R>> get_env() noexcept
-            {
-                return {this->sch_, get_env(get_base(*this))};
-            }
-
-            Sch sch_;
-        };
-
-        template<typename R, typename S, typename Sch>
-        struct on_receiver : public receiver_adaptor<on_receiver<R, S, Sch>, R>
-        {
-            void set_value() && noexcept
-            {
-                try {
-                    operation_state auto op = connect(std::move(this->s_), on_receiver_wrapper<R, Sch>
-                        {std::move(get_base(*this)), std::move(this->sch_)});
-                    start(op);
-                } catch (...) {
-                    exec::set_error(std::move(get_base(*this)), std::current_exception());
-                }
-            }
-
-            S s_;
-            Sch sch_;
-        };
-
-        template<typename Sch, typename S>
-        struct on_sender
-        {
-            using is_sender = void;
-
-            template<typename ... Ts>
-            using SetValue = completion_signatures<>;
-
-            template<decays_to<on_sender> Self, typename Env>
-            friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
-                -> make_completion_signatures<decltype(std::declval<Self>().s_), 
-                replace_scheduler_env<Sch, Env>, make_completion_signatures<schedule_result_t<Sch>, 
-                Env, completion_signatures<set_error_t(std::exception_ptr)>, SetValue>>
-            {
-                return {};
-            }
-
-            template<decays_to<on_sender> Self, receiver R>
-                requires sender_to<schedule_result_t<Sch>, 
-                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>
-            friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_invocable_v<connect_t, schedule_result_t<Sch>, 
-                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>)
-                -> connect_result_t<schedule_result_t<Sch>, 
-                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>>
-            {
-                return connect(schedule(std::forward<Self>(self).sch_), 
-                    on_receiver<std::remove_cvref_t<R>, std::remove_cvref_t<S>, std::remove_cvref_t<Sch>>
-                    {std::forward<R>(r), std::forward<Self>(self).s_, std::forward<Self>(self).sch_});
-            }
-
-            friend auto tag_invoke(get_env_t, const on_sender& self) noexcept
-                -> replace_scheduler_env<Sch, env_of_t<S>>
-            {
-                return {self.sch_, get_env(self.s_)};
-            }
-
-            Sch sch_;
-            S s_;
-        };
-
-        struct on_t
-        {
-            using Tag = on_t;
-
-            template<scheduler Sch>
-            constexpr auto operator()(Sch&& sch) const
-                noexcept(nothrow_movable_value<Sch>)
-                -> sender_adaptor_closure<Tag, std::remove_cvref_t<Sch>>
-            {
-                return {std::forward<Sch>(sch)};
-            }
-
-            template<scheduler Sch, sender S>
-                requires tag_invocable<Tag, Sch, S>
-            constexpr auto operator()(Sch&& sch, S&& s) const
-                noexcept(nothrow_tag_invocable<Tag, Sch, S>)
-                -> tag_invoke_result_t<Tag, Sch, S>
-            {
-                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<S>(s));
-            }
-
-            template<scheduler Sch, sender S>
-                requires (!tag_invocable<Tag, Sch, S>)
-            constexpr auto operator()(Sch&& sch, S&& s) const 
-                noexcept(nothrow_movable_value<Sch> && nothrow_movable_value<S>)
-                -> on_sender<std::remove_cvref_t<Sch>, std::remove_cvref_t<S>>
-            {
-                return {std::forward<Sch>(sch), std::forward<S>(s)};
-            }
-        };
-
-        template<typename Sch, typename R>
-        struct schedule_from_receiver : public receiver_adaptor<schedule_from_receiver<Sch, R>, R>
-        {
-            template<typename ... Args>
-            void set_value(Args&& ... args) && noexcept
-            {
-                try
-                {
-                    operation_state auto op = connect(
-                        on_t{}(std::move(sch_)) |
-                        just_t{}(std::forward<Args>(args)...), std::move(get_base(*this)));
-                    start(op);
-                }
-                catch(...)
-                {
-                    exec::set_error(std::move(get_base(*this)), std::current_exception());
-                }
-            }
-
-            Sch sch_;
-        };
-
-        template<typename Sch, typename S>
-        struct schedule_from_sender
-        {
-            using is_sender = void;
-
-            template<typename Env>
-            struct SetValue
-            {
-                template<typename ... Ts>
-                using apply = make_completion_signatures<on_sender<Sch, 
-                    decltype(just(std::declval<Ts>()...))>, Env>;
-            };
-
-            template<decays_to<schedule_from_sender> Self, typename Env>
-            friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
-                -> make_completion_signatures<S, Env, 
-                    completion_signatures<set_error_t(std::exception_ptr)>, 
-                    SetValue<Env>::template apply>
-            {
-                return {};
-            }
-
-            template<decays_to<schedule_from_sender> Self, receiver R>
-                requires sender_to<decltype(std::declval<Self>().s_), 
-                    schedule_from_receiver<Sch, std::remove_cvref_t<R>>>
-            friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
-                    schedule_from_receiver<Sch, std::remove_cvref_t<R>>>)
-                -> connect_result_t<decltype(std::declval<Self>().s_), 
-                    schedule_from_receiver<Sch, std::remove_cvref_t<R>>>
-            {
-                return connect(std::forward<Self>(self).s_, 
-                    schedule_from_receiver<Sch, std::remove_cvref_t<R>>
-                    {std::forward<R>(r), std::forward<Self>(self).sch_});
-            }
-            
-            friend auto tag_invoke(get_env_t, const schedule_from_sender& self) noexcept
-                -> replace_scheduler_env<Sch, env_of_t<S>>
-            {
-                return {self.sch_, get_env(self.s_)};
-            }
-
-            Sch sch_;
-            S s_;
-        };
-
-        struct schedule_from_t
-        {
-            using Tag = schedule_from_t;
-
-            template<scheduler Sch>
-            constexpr auto operator()(Sch&& sch) const
-                noexcept(nothrow_movable_value<Sch>)
-                -> sender_adaptor_closure<Tag, std::remove_cvref_t<Sch>>
-            {
-                return {std::forward<Sch>(sch)};
-            }
-
-            template<scheduler Sch, sender S>
-                requires tag_invocable<Tag, Sch, S>
-            constexpr auto operator()(Sch&& sch, S&& s) const
-                noexcept(nothrow_tag_invocable<Tag, Sch, S>)
-                -> tag_invoke_result_t<Tag, Sch, S>
-            {
-                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<S>(s));
-            }
-
-            template<scheduler Sch, sender S>
-                requires (!tag_invocable<Tag, Sch, S>)
-            constexpr auto operator()(Sch&& sch, S&& s) const 
-                noexcept(nothrow_movable_value<Sch> && nothrow_movable_value<S>)
-                ->schedule_from_sender<std::remove_cvref_t<Sch>, std::remove_cvref_t<S>>
-            {
-                return {std::forward<Sch>(sch), std::forward<S>(s)};
-            }
-        };
-
-        struct transfer_t
-        {
-            using Tag = transfer_t;
-
-            template<scheduler Sch>
-            constexpr auto operator()(Sch&& sch) const
-                noexcept(nothrow_movable_value<Sch>)
-                -> sender_adaptor_closure<Tag, std::remove_cvref_t<Sch>>
-            {
-                return {std::forward<Sch>(sch)};
-            }
-
-            template<sender S, scheduler Sch>
-                requires tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>
-            constexpr auto operator()(S&& s, Sch&& sch) const
-                noexcept(nothrow_tag_invocable<Tag, completion_scheduler_of_t<set_value_t, 
-                    env_of_t<S>>, S, Sch>)
-                -> tag_invoke_result_t<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>
-            {
-                return tag_invoke(Tag{}, get_completion_scheduler_t<set_value_t>(get_env_t(s)), 
-                    std::forward<S>(s), std::forward<Sch>(sch));
-            }
-
-            template<sender S, scheduler Sch>
-                requires (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>) &&
-                    tag_invocable<Tag, S, Sch>
-            constexpr auto operator()(S&& s, Sch&& sch) const
-                noexcept(nothrow_tag_invocable<Tag, S, Sch>)
-                -> tag_invoke_result_t<Tag, S, Sch>
-            {
-                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<Sch>(sch));
-            }
-
-            template<sender S, scheduler Sch>
-                requires (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>) &&
-                    (!tag_invocable<Tag, S, Sch>)
-            constexpr auto operator()(S&& s, Sch&& sch) const
-                noexcept(std::is_nothrow_invocable_v<schedule_from_t, Sch, S>)
-                -> std::invoke_result_t<schedule_from_t, Sch, S>
-            {
-                return schedule_from_t{}(std::forward<Sch>(sch), std::forward<S>(s));
-            }
-        };
+        using then_t = upon_t<set_value_t>;
+        using upon_error_t = upon_t<set_error_t>;
+        using upon_stopped_t = upon_t<set_stopped_t>;
 
         template<typename CPO, typename F, typename R>
         struct let_receiver
@@ -1393,72 +1120,6 @@ namespace vkr::exec
         using let_error_t = let_t<set_error_t>;
         using let_stopped_t = let_t<set_stopped_t>;
 
-        template<typename R, typename Shape, typename F>
-        struct bulk_receiver : public receiver_adaptor<bulk_receiver<R, Shape, F>, R>
-        {
-            template<typename ... Ts>
-                requires std::invocable<F, Shape, std::add_lvalue_reference_t<Ts>...>
-            void set_value(Ts&& ... args) && noexcept
-            {
-                try
-                {
-                    for(Shape i = 0; i < shape_; i++)
-                    {
-                        std::move(f_)(i, args...);
-                    }
-                    exec::set_value(std::move(get_base(*this)), std::forward<Ts>(args)...);
-                }
-                catch(...)
-                {
-                    exec::set_error(std::move(get_base(*this)), std::current_exception());
-                }
-            }
-
-            Shape shape_;
-            F f_;
-        };
-
-        template<typename S, typename Shape, typename F>
-        struct bulk_sender
-        {
-            using is_sender = void;
-
-            template<typename ... Ts>
-            using SetValue = 
-                std::conditional_t<std::is_nothrow_invocable_v<F, Shape, std::add_lvalue_reference_t<Ts>...>, 
-                    completion_signatures<set_value_t(Ts...)>, 
-                    completion_signatures<set_value_t(Ts...), set_error_t(std::exception_ptr)>>;
-
-            template<decays_to<bulk_sender> Self, typename Env>
-            friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
-                -> make_completion_signatures<S, Env, completion_signatures<>, SetValue>
-            {
-                return {};
-            }
-
-            template<decays_to<bulk_sender> Self, receiver R>
-                requires sender_to<decltype(std::declval<Self>().s_), 
-                    bulk_receiver<std::remove_cvref_t<R>, Shape, std::decay_t<F>>>
-            friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
-                    bulk_receiver<std::remove_cvref_t<R>, Shape, std::decay_t<F>>>)
-                -> std::invoke_result_t<connect_t, decltype(std::declval<Self>().s_), 
-                    bulk_receiver<std::remove_cvref_t<R>, Shape, std::decay_t<F>>>
-            {
-                return connect(std::forward<Self>(self).s_, bulk_receiver<std::remove_cvref_t<R>, Shape, 
-                    std::decay_t<F>>{std::forward<R>(r), self.shape_, std::forward<Self>(self).f_});
-            }
-
-            friend decltype(auto) tag_invoke(get_env_t, const bulk_sender& self) noexcept
-            {
-                return get_env(self.s_);
-            }
-
-            S s_;
-            Shape shape_;
-            F f_;
-        };
-
         struct bulk_t
         {
             using Tag = bulk_t;
@@ -1507,71 +1168,20 @@ namespace vkr::exec
                     (!tag_invocable<Tag, S, Shape, F>) &&
                     value_types_of_t<S, env_of_t<S>, function_shape_invocable<F, Shape>::template apply, type_list>::
                         template apply<and_all>::value
-            constexpr auto operator()(S&& s, Shape shape, F&& f) const
+            constexpr decltype(auto) operator()(S&& s, Shape shape, F&& f) const
                 noexcept(nothrow_movable_value<S> && nothrow_movable_value<F>)
-                -> bulk_sender<std::remove_cvref_t<S>, Shape, std::decay_t<F>>
             {
-                return {std::forward<S>(s), shape, std::forward<F>(f)};
+                return std::forward<S>(s) |
+                    let_value_t{}([shape, f = std::forward<F>(f)](auto&& ... args)
+                    {
+                        for(Shape i = 0; i < shape; i++)
+                        {
+                            std::move(f)(i, args...);
+                        }
+                        return just(std::forward<decltype(args)>(args)...);
+                    }
+                    );
             }
-        };
-
-        template<typename R, typename Variant>
-        struct into_variant_receiver : public receiver_adaptor<into_variant_receiver<R, Variant>, R>
-        {
-            template<typename ... Ts>
-                requires std::constructible_from<Variant, Ts...>
-            void set_value(Ts&& ... args) && noexcept
-            {
-                try
-                {
-                    exec::set_value(std::move(get_base(*this)), Variant{std::forward<Ts>(args)...});
-                }
-                catch(...)
-                {
-                    exec::set_error(std::move(get_base(*this)), std::current_exception());
-                }
-            }
-        };
-
-        template<typename S>
-        struct into_variant_sender
-        {
-            using is_sender = void;
-
-            using Variant = value_types_of_t<S, env_of_t<S>>;
-
-            template<typename ... Ts>
-            using SetValue =
-                std::conditional_t<std::is_nothrow_constructible_v<Variant, Ts...>,  
-                    completion_signatures<set_value_t(Variant)>, 
-                    completion_signatures<set_value_t(Variant), set_error_t(std::exception_ptr)>>;
-
-            template<decays_to<into_variant_sender> Self, typename Env>
-            friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
-                -> make_completion_signatures<S, Env, completion_signatures<>, SetValue>
-            {
-                return {};
-            }
-
-            template<decays_to<into_variant_sender> Self, receiver R>
-                requires sender_to<decltype(std::declval<Self>().s_), 
-                    into_variant_receiver<std::remove_cvref_t<R>, Variant>>
-            friend auto tag_invoke(connect_t, Self&& self, R&& r)
-                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
-                    into_variant_receiver<std::remove_cvref_t<R>, Variant>>)
-                -> std::invoke_result_t<connect_t, decltype(std::declval<Self>().s_), 
-                    into_variant_receiver<std::remove_cvref_t<R>, Variant>>
-            {
-                return connect(std::forward<Self>(self).s_, into_variant_receiver<std::remove_cvref_t<R>, Variant>
-                    {std::forward<R>(r)});
-            }
-
-            friend decltype(auto) tag_invoke(get_env_t, const into_variant_sender& self) noexcept
-            {
-                return get_env(self.s_);
-            }
-
-            S s_;
         };
 
         struct into_variant_t
@@ -1585,11 +1195,15 @@ namespace vkr::exec
             }
 
             template<sender S>
-            constexpr auto operator()(S&& s) const
+            constexpr decltype(auto) operator()(S&& s) const
                 noexcept(nothrow_movable_value<S>)
-                -> into_variant_sender<std::remove_cvref_t<S>>
             {
-                return {std::forward<S>(s)};
+                return std::forward<S>(s) |
+                    then_t{}([](auto&& ... args)
+                    {
+                        return value_types_of_t<std::remove_cvref_t<S>, env_of_t<std::remove_cvref_t<S>>>
+                            {std::forward<decltype(args)>(args)...};
+                    });
             } 
         };
 
@@ -1627,34 +1241,172 @@ namespace vkr::exec
             } 
         };
 
+        struct on_t
+        {
+            using Tag = on_t;
+
+            template<scheduler Sch>
+            constexpr auto operator()(Sch&& sch) const
+                noexcept(nothrow_movable_value<Sch>)
+                -> sender_adaptor_closure<Tag, std::remove_cvref_t<Sch>>
+            {
+                return {std::forward<Sch>(sch)};
+            }
+
+            template<scheduler Sch, sender S>
+                requires tag_invocable<Tag, Sch, S>
+            constexpr auto operator()(Sch&& sch, S&& s) const
+                noexcept(nothrow_tag_invocable<Tag, Sch, S>)
+                -> tag_invoke_result_t<Tag, Sch, S>
+            {
+                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<S>(s));
+            }
+
+            template<scheduler Sch, sender S>
+                requires (!tag_invocable<Tag, Sch, S>)
+            constexpr decltype(auto) operator()(Sch&& sch, S&& s) const 
+                noexcept(nothrow_movable_value<Sch> && nothrow_movable_value<S>)
+            {
+                return schedule(std::forward<Sch>(sch)) |
+                    let_value_t{}([s = std::forward<S>(s)]()
+                        {
+                            return std::move(s);
+                        }
+                    );
+            }
+        };
+
+        template<typename Sch, typename S>
+        struct transfer_env_sender
+        {
+            using is_sender = void;
+
+            template<typename CPO, decays_to<transfer_env_sender> Self, typename ... Ts>
+                requires (!std::same_as<CPO, get_env_t>) &&
+                    std::invocable<CPO, decltype(std::declval<Self>().s_), Ts...> 
+            friend constexpr auto tag_invoke(CPO, Self&& self, Ts&& ... args)
+                noexcept(std::is_nothrow_invocable_v<CPO, decltype(std::declval<Self>().s_), Ts...>)
+                -> std::invoke_result_t<CPO, decltype(std::declval<Self>().s_), Ts...>
+            {
+                return CPO{}(std::forward<Self>(self).s_, std::forward<Ts>(args)...);
+            }
+
+            friend decltype(auto) tag_invoke(get_env_t, const transfer_env_sender& self) noexcept
+            {
+                return get_env(schedule(self.sch_));
+            }
+
+            Sch sch_;
+            S s_;
+        };
+
+        struct schedule_from_t
+        {
+            using Tag = schedule_from_t;
+
+            template<scheduler Sch>
+            constexpr auto operator()(Sch&& sch) const
+                noexcept(nothrow_movable_value<Sch>)
+                -> sender_adaptor_closure<Tag, std::remove_cvref_t<Sch>>
+            {
+                return {std::forward<Sch>(sch)};
+            }
+
+            template<scheduler Sch, sender S>
+                requires tag_invocable<Tag, Sch, S>
+            constexpr auto operator()(Sch&& sch, S&& s) const
+                noexcept(nothrow_tag_invocable<Tag, Sch, S>)
+                -> tag_invoke_result_t<Tag, Sch, S>
+            {
+                return tag_invoke(Tag{}, std::forward<Sch>(sch), std::forward<S>(s));
+            }
+
+            template<scheduler Sch, sender S>
+                requires (!tag_invocable<Tag, Sch, S>)
+            constexpr decltype(auto) operator()(Sch&& sch, S&& s) const 
+                noexcept(nothrow_movable_value<Sch> && nothrow_movable_value<S>)
+            {
+                return transfer_env_sender{std::forward<Sch>(sch), std::forward<S>(s) |
+                    let_value_t{}([sch](auto&& ... args)
+                    {
+                        return on_t{}(std::move(sch)) |
+                            just_t{}(std::forward<decltype(args)>(args)...);
+                    })};
+            }
+        };
+
+        struct transfer_t
+        {
+            using Tag = transfer_t;
+
+            template<scheduler Sch>
+            constexpr auto operator()(Sch&& sch) const
+                noexcept(nothrow_movable_value<Sch>)
+                -> sender_adaptor_closure<Tag, std::remove_cvref_t<Sch>>
+            {
+                return {std::forward<Sch>(sch)};
+            }
+
+            template<sender S, scheduler Sch>
+                requires tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>
+            constexpr auto operator()(S&& s, Sch&& sch) const
+                noexcept(nothrow_tag_invocable<Tag, completion_scheduler_of_t<set_value_t, 
+                    env_of_t<S>>, S, Sch>)
+                -> tag_invoke_result_t<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>
+            {
+                return tag_invoke(Tag{}, get_completion_scheduler_t<set_value_t>(get_env_t(s)), 
+                    std::forward<S>(s), std::forward<Sch>(sch));
+            }
+
+            template<sender S, scheduler Sch>
+                requires (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>) &&
+                    tag_invocable<Tag, S, Sch>
+            constexpr auto operator()(S&& s, Sch&& sch) const
+                noexcept(nothrow_tag_invocable<Tag, S, Sch>)
+                -> tag_invoke_result_t<Tag, S, Sch>
+            {
+                return tag_invoke(Tag{}, std::forward<S>(s), std::forward<Sch>(sch));
+            }
+
+            template<sender S, scheduler Sch>
+                requires (!tag_invocable<Tag, completion_scheduler_of_t<set_value_t, env_of_t<S>>, S, Sch>) &&
+                    (!tag_invocable<Tag, S, Sch>)
+            constexpr auto operator()(S&& s, Sch&& sch) const
+                noexcept(std::is_nothrow_invocable_v<schedule_from_t, Sch, S>)
+                -> std::invoke_result_t<schedule_from_t, Sch, S>
+            {
+                return schedule_from_t{}(std::forward<Sch>(sch), std::forward<S>(s));
+            }
+        };
+
     }// namespace sender_adaptors
 
     using sender_adaptors::sender_adaptor_closure;
     using sender_adaptors::then_t;
     using sender_adaptors::upon_error_t;
     using sender_adaptors::upon_stopped_t;
-    using sender_adaptors::on_t;
-    using sender_adaptors::schedule_from_t;
-    using sender_adaptors::transfer_t;
     using sender_adaptors::let_value_t;
     using sender_adaptors::let_error_t;
     using sender_adaptors::let_stopped_t;
     using sender_adaptors::bulk_t;
     using sender_adaptors::into_variant_t;
     using sender_adaptors::stopped_as_optional_t;
+    using sender_adaptors::on_t;
+    using sender_adaptors::schedule_from_t;
+    using sender_adaptors::transfer_t;
 
     inline constexpr then_t then{};
     inline constexpr upon_error_t upon_error{};
     inline constexpr upon_stopped_t upon_stopped{};
-    inline constexpr on_t on{};
-    inline constexpr schedule_from_t schedule_from{};
-    inline constexpr transfer_t transfer{};
     inline constexpr let_value_t let_value{};
     inline constexpr let_error_t let_error{};
     inline constexpr let_stopped_t let_stopped{};
     inline constexpr bulk_t bulk{};
     inline constexpr into_variant_t into_variant{};
     inline constexpr stopped_as_optional_t stopped_as_optional{};
+    inline constexpr on_t on{};
+    inline constexpr schedule_from_t schedule_from{};
+    inline constexpr transfer_t transfer{};
 
 }// namespace vkr::exec
 
