@@ -2,7 +2,6 @@
 #include <exec/scheduler.hpp>
 
 #include <iostream>
-#include <format>
 #include <span>
 
 using namespace std::chrono_literals;
@@ -258,7 +257,19 @@ int main()
         {
             return std::get<0>(std::get<0>(value));
         });
-
     vkr::exec::operation_state auto into_variant_op = vkr::exec::connect(into_variant_sender, TestReceiver{});
     vkr::exec::start(into_variant_op);
+
+    vkr::exec::sender auto s = vkr::exec::just(42);
+
+    vkr::exec::sender auto stopped_as_optional_sender = 
+        vkr::exec::just(42) |
+        vkr::exec::stopped_as_optional() |
+        vkr::exec::then([](std::optional<int> value)
+            {
+                return value.value();
+            }
+        );
+    vkr::exec::operation_state auto stopped_as_optional_op = vkr::exec::connect(stopped_as_optional_sender, TestReceiver{});
+    vkr::exec::start(stopped_as_optional_op);
 }

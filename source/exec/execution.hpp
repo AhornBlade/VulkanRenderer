@@ -3,6 +3,7 @@
 #include <utility>
 #include <tuple>
 #include <variant>
+#include <optional>
 
 #include "tag_invoke.hpp"
 #include "stop_token.hpp"
@@ -610,13 +611,13 @@ namespace vkr::exec
             {
                 R r_;
 
-                friend auto tag_invoke(start_t, operation& op)
+                friend void tag_invoke(start_t, operation& op) noexcept
                 {
                     try 
                     {
-                        set_value(op.r_, Tag{}(get_env(op.r_)));
+                        set_value(std::move(op.r_), Tag{}(get_env(op.r_)));
                     } catch (...) {
-                        set_error(op.r_, std::current_exception());
+                        set_error(std::move(op.r_), std::current_exception());
                     }
                 }
             };
@@ -631,13 +632,13 @@ namespace vkr::exec
 
             template<typename Env>
                 requires std::invocable<Tag, Env> && (!std::is_nothrow_invocable_v<Tag, Env>)
-            friend auto tag_invoke(get_completion_signatures_t, read_sender, Env)
+            friend consteval auto tag_invoke(get_completion_signatures_t, read_sender, Env) noexcept
                 ->completion_signatures<set_value_t(std::invoke_result_t<Tag, Env>), 
                     set_error_t(std::exception_ptr)> { return {};}
 
             template<typename Env>
                 requires std::is_nothrow_invocable_v<Tag, Env>
-            friend auto tag_invoke(get_completion_signatures_t, read_sender, Env)
+            friend consteval auto tag_invoke(get_completion_signatures_t, read_sender, Env) noexcept
                 ->completion_signatures<set_value_t(std::invoke_result_t<Tag, Env>)>{ return {}; }
         };
 
@@ -1592,6 +1593,40 @@ namespace vkr::exec
             } 
         };
 
+        struct stopped_as_optional_t
+        {
+            using Tag = stopped_as_optional_t;
+
+            template<typename S, typename E>
+            using Optional = value_types_of_t<S, E, std::decay_t, std::optional>;
+
+            constexpr auto operator()() const noexcept
+                -> sender_adaptor_closure<Tag>
+            {
+                return {};
+            }
+
+            template<sender S>
+            constexpr decltype(auto) operator()(S&& s) const
+                noexcept(nothrow_movable_value<S>)
+            {
+                return read(get_scheduler) |
+                    let_value_t{}([&s](scheduler auto&& sch)
+                    {
+                        return std::forward<S>(s)|
+                            then_t{}([](auto&& value)
+                            {
+                                return Optional<S, env_of_t<schedule_result_t<decltype(sch)>> >
+                                    {std::forward<decltype(value)>(value)};
+                            }) |
+                            upon_stopped_t{}([]
+                            {
+                                return Optional<S, env_of_t<schedule_result_t<decltype(sch)>> >{};
+                            });
+                    });
+            } 
+        };
+
     }// namespace sender_adaptors
 
     using sender_adaptors::sender_adaptor_closure;
@@ -1606,6 +1641,7 @@ namespace vkr::exec
     using sender_adaptors::let_stopped_t;
     using sender_adaptors::bulk_t;
     using sender_adaptors::into_variant_t;
+    using sender_adaptors::stopped_as_optional_t;
 
     inline constexpr then_t then{};
     inline constexpr upon_error_t upon_error{};
@@ -1618,6 +1654,7 @@ namespace vkr::exec
     inline constexpr let_stopped_t let_stopped{};
     inline constexpr bulk_t bulk{};
     inline constexpr into_variant_t into_variant{};
+    inline constexpr stopped_as_optional_t stopped_as_optional{};
 
 }// namespace vkr::exec
 
