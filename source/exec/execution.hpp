@@ -417,7 +417,7 @@ namespace vkr::exec
     using decayed_tuple = std::tuple<std::decay_t<Ts>...>;
 
     template<typename ... Ts>
-    using decayed_variant = std::tuple<std::decay_t<Ts>...>;
+    using decayed_variant = std::variant<std::decay_t<Ts>...>;
 
     template<typename Sig>
     using args_type_list_of_sig = completion_signature_traits<Sig>::args_type_list;
@@ -846,10 +846,13 @@ namespace vkr::exec
         template<typename CPO, typename Default, typename F, typename ... Ts>
         struct upon_completion_signatures<CPO, CPO, Default, F, Ts...>
         {
-            using Type = completion_signatures<
-                typename upon_completion_signatures_helper<std::invoke_result_t<F, Ts...>>::Type,
-                std::conditional_t<std::is_nothrow_invocable_v<F, Ts...>, 
-                    set_error_t(), set_error_t(std::exception_ptr)>>;
+            using Type =
+                std::conditional_t<std::is_nothrow_invocable_v<F, Ts...>,  
+                completion_signatures<
+                    typename upon_completion_signatures_helper<std::invoke_result_t<F, Ts...>>::Type>,
+                completion_signatures<
+                    typename upon_completion_signatures_helper<std::invoke_result_t<F, Ts...>>::Type,
+                    set_error_t(std::exception_ptr)>>;
         };
 
         template<typename CPO, typename TargetCPO, typename Default, typename F, typename ... Ts>
@@ -1420,9 +1423,10 @@ namespace vkr::exec
             using is_sender = void;
 
             template<typename ... Ts>
-            using SetValue = completion_signatures<set_value_t(Ts...), 
+            using SetValue = 
                 std::conditional_t<std::is_nothrow_invocable_v<F, Shape, std::add_lvalue_reference_t<Ts>...>, 
-                    set_error_t(), set_error_t(std::exception_ptr)>>;
+                    completion_signatures<set_value_t(Ts...)>, 
+                    completion_signatures<set_value_t(Ts...), set_error_t(std::exception_ptr)>>;
 
             template<decays_to<bulk_sender> Self, typename Env>
             friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
@@ -1510,6 +1514,84 @@ namespace vkr::exec
             }
         };
 
+        template<typename R, typename Variant>
+        struct into_variant_receiver : public receiver_adaptor<into_variant_receiver<R, Variant>, R>
+        {
+            template<typename ... Ts>
+                requires std::constructible_from<Variant, Ts...>
+            void set_value(Ts&& ... args) && noexcept
+            {
+                try
+                {
+                    exec::set_value(std::move(get_base(*this)), Variant{std::forward<Ts>(args)...});
+                }
+                catch(...)
+                {
+                    exec::set_error(std::move(get_base(*this)), std::current_exception());
+                }
+            }
+        };
+
+        template<typename S>
+        struct into_variant_sender
+        {
+            using is_sender = void;
+
+            using Variant = value_types_of_t<S, env_of_t<S>>;
+
+            template<typename ... Ts>
+            using SetValue =
+                std::conditional_t<std::is_nothrow_constructible_v<Variant, Ts...>,  
+                    completion_signatures<set_value_t(Variant)>, 
+                    completion_signatures<set_value_t(Variant), set_error_t(std::exception_ptr)>>;
+
+            template<decays_to<into_variant_sender> Self, typename Env>
+            friend consteval auto tag_invoke(get_completion_signatures_t, Self&&, Env&&) noexcept
+                -> make_completion_signatures<S, Env, completion_signatures<>, SetValue>
+            {
+                return {};
+            }
+
+            template<decays_to<into_variant_sender> Self, receiver R>
+                requires sender_to<decltype(std::declval<Self>().s_), 
+                    into_variant_receiver<std::remove_cvref_t<R>, Variant>>
+            friend auto tag_invoke(connect_t, Self&& self, R&& r)
+                noexcept(std::is_nothrow_invocable_v<connect_t, decltype(std::declval<Self>().s_), 
+                    into_variant_receiver<std::remove_cvref_t<R>, Variant>>)
+                -> std::invoke_result_t<connect_t, decltype(std::declval<Self>().s_), 
+                    into_variant_receiver<std::remove_cvref_t<R>, Variant>>
+            {
+                return connect(std::forward<Self>(self).s_, into_variant_receiver<std::remove_cvref_t<R>, Variant>
+                    {std::forward<R>(r)});
+            }
+
+            friend decltype(auto) tag_invoke(get_env_t, const into_variant_sender& self) noexcept
+            {
+                return get_env(self.s_);
+            }
+
+            S s_;
+        };
+
+        struct into_variant_t
+        {
+            using Tag = into_variant_t;
+
+            constexpr auto operator()() const noexcept 
+                -> sender_adaptor_closure<Tag>
+            {
+                return {};
+            }
+
+            template<sender S>
+            constexpr auto operator()(S&& s) const
+                noexcept(nothrow_movable_value<S>)
+                -> into_variant_sender<std::remove_cvref_t<S>>
+            {
+                return {std::forward<S>(s)};
+            } 
+        };
+
     }// namespace sender_adaptors
 
     using sender_adaptors::sender_adaptor_closure;
@@ -1523,6 +1605,7 @@ namespace vkr::exec
     using sender_adaptors::let_error_t;
     using sender_adaptors::let_stopped_t;
     using sender_adaptors::bulk_t;
+    using sender_adaptors::into_variant_t;
 
     inline constexpr then_t then{};
     inline constexpr upon_error_t upon_error{};
@@ -1534,6 +1617,7 @@ namespace vkr::exec
     inline constexpr let_error_t let_error{};
     inline constexpr let_stopped_t let_stopped{};
     inline constexpr bulk_t bulk{};
+    inline constexpr into_variant_t into_variant{};
 
 }// namespace vkr::exec
 

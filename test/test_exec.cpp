@@ -250,4 +250,15 @@ int main()
         });
     vkr::exec::operation_state auto bulk_op = vkr::exec::connect(bulk_sender, TestReceiver{});
     vkr::exec::start(bulk_op);
+
+    vkr::exec::sender auto into_variant_sender = 
+        vkr::exec::just(42) |
+        vkr::exec::into_variant() |
+        vkr::exec::then([](std::variant<std::tuple<int>>&& value)
+        {
+            return std::get<0>(std::get<0>(value));
+        });
+
+    vkr::exec::operation_state auto into_variant_op = vkr::exec::connect(into_variant_sender, TestReceiver{});
+    vkr::exec::start(into_variant_op);
 }
