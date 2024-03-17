@@ -1067,6 +1067,8 @@ namespace vkr::exec
             {
                 return std::forward<S>(s) |
                     let_value_t{}([shape, f = std::forward<F>(f)](auto&& ... args)
+                        requires std::invocable<decltype(f), decltype(shape), 
+                            std::add_lvalue_reference_t<decltype(args)>...>
                     {
                         for(Shape i = 0; i < shape; i++)
                         {
