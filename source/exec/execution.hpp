@@ -1137,6 +1137,24 @@ namespace vkr::exec
             } 
         };
 
+        struct stopped_as_error_t
+        {
+            using Tag = stopped_as_error_t;
+
+            template<movable_value E>
+            constexpr auto operator()(E&& e) const
+                -> sender_adaptor_closure<Tag, std::decay_t<E>>
+            {
+                return { std::forward<E>(e) };
+            }
+
+            template<sender S, movable_value E>
+            constexpr decltype(auto) operator()(S&& s, E&& e) const
+            {
+                return s | let_stopped_t{}([e = std::forward<E>(e)]{ return just_error(std::move(e)); });
+            }
+        };
+
         struct on_t
         {
             using Tag = on_t;
@@ -1263,6 +1281,7 @@ namespace vkr::exec
     using sender_adaptors::bulk_t;
     using sender_adaptors::into_variant_t;
     using sender_adaptors::stopped_as_optional_t;
+    using sender_adaptors::stopped_as_error_t;
     using sender_adaptors::on_t;
     using sender_adaptors::schedule_from_t;
     using sender_adaptors::transfer_t;
@@ -1276,6 +1295,7 @@ namespace vkr::exec
     inline constexpr bulk_t bulk{};
     inline constexpr into_variant_t into_variant{};
     inline constexpr stopped_as_optional_t stopped_as_optional{};
+    inline constexpr stopped_as_error_t stopped_as_error{};
     inline constexpr on_t on{};
     inline constexpr schedule_from_t schedule_from{};
     inline constexpr transfer_t transfer{};

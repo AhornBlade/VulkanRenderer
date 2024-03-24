@@ -272,4 +272,10 @@ int main()
         );
     vkr::exec::operation_state auto stopped_as_optional_op = vkr::exec::connect(stopped_as_optional_sender, TestReceiver{});
     vkr::exec::start(stopped_as_optional_op);
+
+    vkr::exec::sender auto stopped_as_error_sender = 
+        vkr::exec::just_stopped() |
+        vkr::exec::stopped_as_error("logic error");
+    vkr::exec::operation_state auto stopped_as_error_op = vkr::exec::connect(stopped_as_error_sender, TestReceiver{});
+    vkr::exec::start(stopped_as_error_op);
 }
