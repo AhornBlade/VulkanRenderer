@@ -9,3 +9,5 @@ target_link_libraries(test_core
 add_executable(test_exec "test_exec.cpp")
 target_link_libraries(test_exec
 	PUBLIC VulkanRenderer::exec)
+
+add_subdirectory(test_generate_shader)
