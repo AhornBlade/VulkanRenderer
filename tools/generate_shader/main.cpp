@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
         spv_reflect_wrapper::SpvReflectShaderModule module{shader};
         std::ofstream targetFile{targetFilename, std::ios::out | std::ios::trunc};
         std::string shaderName = std::filesystem::path{targetFilename}.stem().string();
-        targetFile << "#pragma once\n#include <array>\n#include <vector>\n#include <glm/glm.hpp>\n";
+        targetFile << "#pragma once\n#include <array>\n#include <glm/glm.hpp>\n";
         targetFile << std::format("namespace ShaderData::{}{{\n", shaderName);
         targetFile << std::format("static const std::array<uint32_t, {}> code = \n{{\n    ", shader.size());
         for(uint32_t data : shader)
