@@ -98,6 +98,7 @@ namespace vkr
 	}
 
 	QueueFamily::QueueFamily(const vk::raii::Device& device, const vk::DeviceQueueCreateInfo& queueCreateInfo)
+		: queueFamilyIndex{queueCreateInfo.queueFamilyIndex}
 	{
 		for (uint32_t queueIndex = 0; queueIndex < queueCreateInfo.queueCount; queueIndex++)
 		{
