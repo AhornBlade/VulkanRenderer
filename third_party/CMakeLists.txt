@@ -6,3 +6,6 @@ add_subdirectory(SPIRV-Reflect-Wrapper)
 
 #glm
 add_subdirectory(glm)
+
+#Catch2
+add_subdirectory(Catch2)
